@@ -73,49 +73,44 @@ void BME280::begin() {
         Serial.print("P2: "); Serial.println(dig_P2);
     }
     
-    // Humidity calibration mit Rohdaten-Debug
+    // Humidity Kalibrierung - exakt nach Datenblatt
     Wire.beginTransmission(0x76);
-    Wire.write(0xA1);
+    Wire.write(0xA1);  // H1 Register
     Wire.endTransmission();
     Wire.requestFrom(0x76, 1);
-    uint8_t h1 = Wire.read();
-    
+    dig_H1 = Wire.read();
+
     Wire.beginTransmission(0x76);
-    Wire.write(0xE1);
+    Wire.write(0xE1);  // H2 bis H6 Register
     Wire.endTransmission();
     Wire.requestFrom(0x76, 7);
     
-    if (Wire.available() >= 7) {
-        uint8_t raw[7];
-        for(int i=0; i<7; i++) {
-            raw[i] = Wire.read();
-        }
-        
-        Serial.println("\nRaw calibration bytes:");
-        for(int i=0; i<7; i++) {
-            Serial.print("0x");
-            if(raw[i] < 0x10) Serial.print("0");
-            Serial.print(raw[i], HEX);
-            Serial.print(" ");
-        }
-        Serial.println();
-        
-        // Zusammensetzen der Werte
-        dig_H1 = h1;
-        dig_H2 = (int16_t)(raw[1] << 8 | raw[0]);
-        dig_H3 = raw[2];
-        dig_H4 = (int16_t)((raw[3] << 4) | (raw[4] & 0x0F));
-        dig_H5 = (int16_t)((raw[4] >> 4) | (raw[5] << 4));
-        dig_H6 = (int8_t)raw[6];
-
-        Serial.println("\nCalibration data:");
-        Serial.print("H1: "); Serial.println(dig_H1);
-        Serial.print("H2: "); Serial.println(dig_H2);
-        Serial.print("H3: "); Serial.println(dig_H3);
-        Serial.print("H4: "); Serial.println(dig_H4);
-        Serial.print("H5: "); Serial.println(dig_H5);
-        Serial.print("H6: "); Serial.println(dig_H6);
+    Serial.println("\nReading humidity calibration:");
+    Serial.print("Raw bytes: ");
+    
+    uint8_t data[7];
+    for(int i=0; i<7; i++) {
+        data[i] = Wire.read();
+        Serial.print("0x"); 
+        Serial.print(data[i], HEX);
+        Serial.print(" ");
     }
+    Serial.println();
+    
+    // Korrekte Zusammensetzung der Werte
+    dig_H2 = (int16_t)((data[1] << 8) | data[0]);
+    dig_H3 = data[2];
+    dig_H4 = (int16_t)((data[3] << 4) | (data[4] & 0xF));
+    dig_H5 = (int16_t)((data[4] >> 4) | (data[5] << 4));
+    dig_H6 = (int8_t)data[6];
+    
+    Serial.println("Assembled calibration values:");
+    Serial.print("H1: "); Serial.println(dig_H1);
+    Serial.print("H2: "); Serial.println(dig_H2);
+    Serial.print("H3: "); Serial.println(dig_H3);
+    Serial.print("H4: "); Serial.println(dig_H4);
+    Serial.print("H5: "); Serial.println(dig_H5);
+    Serial.print("H6: "); Serial.println(dig_H6);
 }
 
 void BME280::writeReg(uint8_t reg, uint8_t value) {
@@ -230,7 +225,7 @@ float BME280::readHumidity() {
     
     Wire.requestFrom(0x76, 2);
     if (Wire.available() >= 2) {
-        uint32_t adc_H = Wire.read();
+        int32_t adc_H = Wire.read();
         adc_H <<= 8;
         adc_H |= Wire.read();
         
@@ -244,49 +239,48 @@ float BME280::readHumidity() {
         Serial.print(dig_H5); Serial.print(", ");
         Serial.println(dig_H6);
         
-        int32_t v_x1_u32r = t_fine - ((int32_t)76800);
-        Serial.print("v_x1_u32r: "); Serial.println(v_x1_u32r);
+        // Temperaturkompensation
+        int32_t v_x1 = t_fine - ((int32_t)76800);
+        Serial.print("Temp comp: "); Serial.println(v_x1);
         
-        // Erste Phase
-        int32_t v_x1_u32 = adc_H << 14;
-        v_x1_u32 -= ((int32_t)dig_H4) << 20;
-        v_x1_u32 -= ((int32_t)dig_H5) * v_x1_u32r;
-        v_x1_u32 += 16384;
-        v_x1_u32 >>= 15;
+        // Originale Formel aus dem Datenblatt
+        int32_t v_x2 = adc_H << 14;
+        Serial.print("ADC shifted: "); Serial.println(v_x2);
         
-        Serial.print("After phase 1: "); Serial.println(v_x1_u32);
+        int32_t v_x3 = ((int32_t)dig_H4) << 20;
+        Serial.print("H4 comp: "); Serial.println(v_x3);
         
-        // Zweite Phase
-        int32_t v_x2_u32 = v_x1_u32r * ((int32_t)dig_H6);
-        v_x2_u32 >>= 10;
-        int32_t v_x3_u32 = v_x1_u32r * ((int32_t)dig_H3);
-        v_x3_u32 >>= 11;
-        v_x3_u32 += 32768;
-        v_x2_u32 *= v_x3_u32;
-        v_x2_u32 >>= 10;
-        v_x2_u32 += 2097152;
-        v_x2_u32 *= ((int32_t)dig_H2);
-        v_x2_u32 += 8192;
-        v_x2_u32 >>= 14;
+        int32_t v_x4 = ((int32_t)dig_H5) * v_x1;
+        Serial.print("H5 comp: "); Serial.println(v_x4);
         
-        Serial.print("After phase 2: "); Serial.println(v_x2_u32);
+        v_x2 = (v_x2 - v_x3 - v_x4 + 16384) >> 15;
+        Serial.print("First comp: "); Serial.println(v_x2);
         
-        // Finale Berechnung
-        v_x1_u32 *= v_x2_u32;
-        v_x1_u32 >>= 15;
+        v_x3 = (v_x1 * ((int32_t)dig_H6)) >> 10;
+        Serial.print("H6 comp: "); Serial.println(v_x3);
         
-        Serial.print("Before H1 comp: "); Serial.println(v_x1_u32);
+        v_x4 = (v_x1 * ((int32_t)dig_H3)) >> 11;
+        Serial.print("H3 comp: "); Serial.println(v_x4);
         
-        int32_t h1_comp = (v_x1_u32 >> 7) * (v_x1_u32 >> 7);
-        h1_comp >>= 8;
-        h1_comp *= ((int32_t)dig_H1);
-        h1_comp >>= 4;
+        v_x3 = (((v_x3 * (v_x4 + 32768)) >> 10) + 2097152) * ((int32_t)dig_H2) + 8192;
+        v_x3 >>= 14;
+        Serial.print("Second comp: "); Serial.println(v_x3);
         
-        v_x1_u32 -= h1_comp;
-        v_x1_u32 = (v_x1_u32 < 0) ? 0 : v_x1_u32;
-        v_x1_u32 = (v_x1_u32 > 419430400) ? 419430400 : v_x1_u32;
+        v_x2 *= v_x3;
+        v_x2 >>= 15;
+        Serial.print("Combined: "); Serial.println(v_x2);
         
-        float h = (float)(v_x1_u32 >> 12) / 1024.0f;
+        v_x3 = (v_x2 >> 7) * (v_x2 >> 7);
+        v_x3 >>= 7;
+        v_x3 *= ((int32_t)dig_H1);
+        v_x3 >>= 4;
+        Serial.print("H1 comp: "); Serial.println(v_x3);
+        
+        v_x2 -= v_x3;
+        v_x2 = (v_x2 < 0) ? 0 : v_x2;
+        v_x2 = (v_x2 > 419430400) ? 419430400 : v_x2;
+        
+        float h = (float)v_x2 / 1024.0f;  // Original Skalierung
         
         Serial.print("Final humidity: "); Serial.println(h);
         return h;
