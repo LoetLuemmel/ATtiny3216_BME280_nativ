@@ -83,7 +83,21 @@ void BME280::begin() {
     Wire.requestFrom(0x76, 1);
     dig_H1 = Wire.read();
     
-    // H2 bis H6 (0xE1 bis 0xE7)
+    // H3 separat lesen
+    Wire.beginTransmission(0x76);
+    Wire.write(0xE3);  // H3 Register
+    Wire.endTransmission();
+    Wire.requestFrom(0x76, 1);
+    dig_H3 = Wire.read();
+    
+    Serial.println("\nBME280 Register Analysis:");
+    Serial.print("H3 direct read (0xE3): 0x");
+    Serial.print(dig_H3, HEX);
+    Serial.print(" (");
+    Serial.print(dig_H3);
+    Serial.println(")");
+
+    // Restliche Register lesen
     Wire.beginTransmission(0x76);
     Wire.write(0xE1);
     Wire.endTransmission();
@@ -91,38 +105,75 @@ void BME280::begin() {
     
     uint8_t e1 = Wire.read();
     uint8_t e2 = Wire.read();
-    uint8_t e3 = Wire.read();
+    uint8_t e3 = Wire.read();  // Sollte gleich wie dig_H3 sein
     uint8_t e4 = Wire.read();
     uint8_t e5 = Wire.read();
     uint8_t e6 = Wire.read();
     uint8_t e7 = Wire.read();
 
-    // Bit-Operationen mit detaillierter Debug-Ausgabe
-    Serial.println("\nBME280 Register Raw Values (HEX):");
+    Serial.print("H3 block read (0xE3): 0x");
+    Serial.print(e3, HEX);
+    Serial.print(" (");
+    Serial.print(e3);
+    Serial.println(")");
+
+    Serial.println("\nBME280 Humidity Calibration Analysis:");
+    Serial.println("Register | Hex  | Binary      | Decoded");
+    Serial.println("---------|------|-------------|--------");
+    
+    Serial.print("0xE1     | ");
+    Serial.print(e1, HEX); Serial.print("   | ");
+    Serial.print(e1, BIN); Serial.print(" | LSB of H2\n");
+    
+    Serial.print("0xE2     | ");
+    Serial.print(e2, HEX); Serial.print("   | ");
+    Serial.print(e2, BIN); Serial.print(" | MSB of H2\n");
+    
+    Serial.print("0xE3     | ");
+    Serial.print(e3, HEX); Serial.print("   | ");
+    Serial.print(e3, BIN); Serial.print(" | H3 (should be 10-50)\n");
+    
+    Serial.print("0xE4     | ");
+    Serial.print(e4, HEX); Serial.print("   | ");
+    Serial.print(e4, BIN); Serial.print(" | MSB of H4\n");
+    
+    Serial.print("0xE5     | ");
+    Serial.print(e5, HEX); Serial.print("   | ");
+    Serial.print(e5, BIN); Serial.print(" | LSB of H4\n");
+    
+    Serial.print("0xE6     | ");
+    Serial.print(e6, HEX); Serial.print("   | ");
+    Serial.print(e6, BIN); Serial.print(" | MSB of H5\n");
+    
+    Serial.print("0xE7     | ");
+    Serial.print(e7, HEX); Serial.print("   | ");
+    Serial.print(e7, BIN); Serial.print(" | LSB of H5\n");
+    
+    // Debug der Rohwerte
+    Serial.println("\nRaw register values:");
     Serial.print("E1-E7: ");
-    Serial.print(e1, HEX); Serial.print(" ");
-    Serial.print(e2, HEX); Serial.print(" ");
-    Serial.print(e3, HEX); Serial.print(" ");
-    Serial.print(e4, HEX); Serial.print(" ");
-    Serial.print(e5, HEX); Serial.print(" ");
-    Serial.print(e6, HEX); Serial.print(" ");
-    Serial.print(e7, HEX); Serial.println(" ");
-    
-    // Kalibrierungswerte zusammensetzen
+    for(int i=0; i<7; i++) {
+        Serial.print("0x");
+        Serial.print(Wire.read(), HEX);
+        Serial.print(" ");
+    }
+    Serial.println();
+
+    // Exakt nach Datenblatt Seite 25:
     dig_H2 = (int16_t)(e2 << 8 | e1);
-    dig_H3 = (uint8_t)e3;
-    
-    // H4 = 0xE4[7:0] + 0xE5[3:0] << 4
-    int16_t h4_msb = (int16_t)(e4 << 4);
-    int16_t h4_lsb = (int16_t)(e5 & 0x0F);
-    dig_H4 = h4_msb | h4_lsb;
-    
-    // H5 = 0xE5[7:4] + 0xE6[7:0] << 4
-    int16_t h5_msb = (int16_t)(e5 << 4);
-    int16_t h5_lsb = (int16_t)(e5 >> 4);
-    dig_H5 = h5_msb | h5_lsb;
-    
+    dig_H4 = ((int16_t)e4 << 4) | (e5 & 0x0F);
+    dig_H5 = ((int16_t)e6 << 4) | (e5 >> 4);
     dig_H6 = (int8_t)e7;
+
+    // Debug der Bit-Operationen
+    Serial.println("\nBit operations:");
+    Serial.print("H4 from E4=0x"); Serial.print(e4,HEX);
+    Serial.print(" and E5[3:0]=0x"); Serial.print(e5 & 0x0F,HEX);
+    Serial.print(" -> "); Serial.println(dig_H4);
+    
+    Serial.print("H5 from E6=0x"); Serial.print(e6,HEX);
+    Serial.print(" and E5[7:4]=0x"); Serial.print(e5 >> 4,HEX);
+    Serial.print(" -> "); Serial.println(dig_H5);
     
     // Debug: Kalibrierungswerte anzeigen
     Serial.println("\nCalibration values:");
@@ -248,70 +299,70 @@ float BME280::readHumidity() {
     Wire.beginTransmission(0x76);
     Wire.write(0xFD);
     Wire.endTransmission();
-    
     Wire.requestFrom(0x76, 2);
-    if (Wire.available() >= 2) {
-        int32_t adc_H = Wire.read();
-        adc_H <<= 8;
-        adc_H |= Wire.read();
-        
-        Serial.println("\nHumidity calculation steps:");
-        Serial.print("ADC_H: "); Serial.println(adc_H);
-        Serial.print("dig_H1-H6: "); 
-        Serial.print(dig_H1); Serial.print(", ");
-        Serial.print(dig_H2); Serial.print(", ");
-        Serial.print(dig_H3); Serial.print(", ");
-        Serial.print(dig_H4); Serial.print(", ");
-        Serial.print(dig_H5); Serial.print(", ");
-        Serial.println(dig_H6);
-        
-        // Temperaturkompensation
-        int32_t v_x1 = t_fine - ((int32_t)76800);
-        Serial.print("Temp comp: "); Serial.println(v_x1);
-        
-        // Originale Formel aus dem Datenblatt
-        int32_t v_x2 = adc_H << 14;
-        Serial.print("ADC shifted: "); Serial.println(v_x2);
-        
-        int32_t v_x3 = ((int32_t)dig_H4) << 20;
-        Serial.print("H4 comp: "); Serial.println(v_x3);
-        
-        int32_t v_x4 = ((int32_t)dig_H5) * v_x1;
-        Serial.print("H5 comp: "); Serial.println(v_x4);
-        
-        v_x2 = (v_x2 - v_x3 - v_x4 + 16384) >> 15;
-        Serial.print("First comp: "); Serial.println(v_x2);
-        
-        v_x3 = (v_x1 * ((int32_t)dig_H6)) >> 10;
-        Serial.print("H6 comp: "); Serial.println(v_x3);
-        
-        v_x4 = (v_x1 * ((int32_t)dig_H3)) >> 11;
-        Serial.print("H3 comp: "); Serial.println(v_x4);
-        
-        v_x3 = (((v_x3 * (v_x4 + 32768)) >> 10) + 2097152) * ((int32_t)dig_H2) + 8192;
-        v_x3 >>= 14;
-        Serial.print("Second comp: "); Serial.println(v_x3);
-        
-        v_x2 *= v_x3;
-        v_x2 >>= 15;
-        Serial.print("Combined: "); Serial.println(v_x2);
-        
-        v_x3 = (v_x2 >> 7) * (v_x2 >> 7);
-        v_x3 >>= 7;
-        v_x3 *= ((int32_t)dig_H1);
-        v_x3 >>= 4;
-        Serial.print("H1 comp: "); Serial.println(v_x3);
-        
-        v_x2 -= v_x3;
-        v_x2 = (v_x2 < 0) ? 0 : v_x2;
-        v_x2 = (v_x2 > 419430400) ? 419430400 : v_x2;
-        
-        float h = (float)v_x2 / 1024.0f;  // Original Skalierung
-        
-        Serial.print("Final humidity: "); Serial.println(h);
-        return h;
-    }
-    return 0;
+    
+    int32_t adc_H = Wire.read();
+    adc_H <<= 8;
+    adc_H |= Wire.read();
+    
+    Serial.println("\nBME280 Humidity Compensation (Datasheet p.25):");
+    Serial.print("1. ADC_H: "); Serial.println(adc_H);
+    Serial.print("2. t_fine: "); Serial.println(t_fine);
+    
+    int32_t v_x1_u32r = t_fine - ((int32_t)76800);
+    Serial.print("3. v_x1_u32r: "); Serial.println(v_x1_u32r);
+    
+    // Erste Phase - Bit für Bit nach Datenblatt
+    int32_t v_x1 = adc_H << 14;
+    Serial.print("4a. ADC shifted: "); Serial.println(v_x1);
+    
+    v_x1 -= ((int32_t)dig_H4) << 20;
+    Serial.print("4b. After H4: "); Serial.println(v_x1);
+    
+    v_x1 -= ((int32_t)dig_H5) * v_x1_u32r;
+    Serial.print("4c. After H5: "); Serial.println(v_x1);
+    
+    v_x1 += ((int32_t)16384);
+    v_x1 >>= 15;
+    Serial.print("4d. First phase final: "); Serial.println(v_x1);
+    
+    // Zweite Phase - Temperatur Kompensation
+    int32_t v_x2 = v_x1_u32r * ((int32_t)dig_H6);
+    Serial.print("5a. H6 comp: "); Serial.println(v_x2 >> 10);
+    
+    int32_t v_x3 = v_x1_u32r * ((int32_t)dig_H3);
+    Serial.print("5b. H3 comp: "); Serial.println(v_x3 >> 11);
+    
+    v_x2 += v_x3 + ((int32_t)32768);
+    Serial.print("5c. H2 comp: "); Serial.println(v_x2 >> 10);
+    
+    v_x2 += ((int32_t)2097152);
+    Serial.print("5d. Add 2^20: "); Serial.println(v_x2);
+    
+    v_x2 += ((int32_t)dig_H2) + 8192;
+    Serial.print("5e. Add H2: "); Serial.println(v_x2);
+    
+    v_x2 >>= 14;
+    Serial.print("5f. Shift right: "); Serial.println(v_x2);
+    
+    v_x1 = (v_x1 * v_x2) >> 15;
+    Serial.print("6. Combined: "); Serial.println(v_x1);
+    
+    // H1 Kompensation
+    v_x1 = (v_x1 - (((((v_x1 >> 15) *                  // Schritt 11
+            (v_x1 >> 15)) >> 7) *
+            ((int32_t)dig_H1)) >> 4));
+    Serial.print("7. After H1: "); Serial.println(v_x1);
+    
+    // Begrenzung des Wertebereichs
+    v_x1 = (v_x1 < 0) ? 0 : v_x1;
+    v_x1 = (v_x1 > 419430400) ? 419430400 : v_x1;
+    
+    // Finale Konvertierung, Datenblatt: ">> 12" / 1024.0
+    float h = (float)(v_x1 >> 12) / 1024.0;
+    
+    Serial.print("8. Final humidity: "); Serial.println(h);
+    return h;
 }
 
 // Neue Hilfsfunktion zum Lesen eines Registers
