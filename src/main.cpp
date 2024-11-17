@@ -12,10 +12,28 @@ void setup() {
     while (!Serial);
     Serial.println(F("BME280 test"));
 
-    Wire.begin(I2C_SDA, I2C_SCL);
+    // I2C Initialisierung mit Debug
+    Wire.swap(1);
+    Wire.begin();
     Wire.setClock(100000);
     delay(100);
 
+    // Test der I2C Kommunikation
+    Serial.println("Testing I2C communication...");
+    
+    Wire.beginTransmission(0x76);
+    byte error = Wire.endTransmission();
+    
+    Serial.print("Basic I2C test error code: ");
+    Serial.println(error);
+    
+    if (error == 0) {
+        Serial.println("I2C device responded!");
+    } else {
+        Serial.println("No I2C device response");
+    }
+    
+    delay(100);
     bme.begin();
 }
 
