@@ -29,38 +29,45 @@ BME280::BME280() {
 }
 
 void BME280::begin() {
-    // Read calibration data
+    // Lese Kalibrierungsdaten
     Wire.beginTransmission(BME280_ADDRESS);
-    Wire.write(BME280_REGISTER_DIG_T1);
+    Wire.write(0x88);  // Start der Kalibrierungsdaten
     Wire.endTransmission();
-    Wire.requestFrom(BME280_ADDRESS, 24);
-    dig_T1 = Wire.read() | (Wire.read() << 8);
-    dig_T2 = Wire.read() | (Wire.read() << 8);
-    dig_T3 = Wire.read() | (Wire.read() << 8);
-    dig_P1 = Wire.read() | (Wire.read() << 8);
-    dig_P2 = Wire.read() | (Wire.read() << 8);
-    dig_P3 = Wire.read() | (Wire.read() << 8);
-    dig_P4 = Wire.read() | (Wire.read() << 8);
-    dig_P5 = Wire.read() | (Wire.read() << 8);
-    dig_P6 = Wire.read() | (Wire.read() << 8);
-    dig_P7 = Wire.read() | (Wire.read() << 8);
-    dig_P8 = Wire.read() | (Wire.read() << 8);
-    dig_P9 = Wire.read() | (Wire.read() << 8);
+    Wire.requestFrom(BME280_ADDRESS, 26);
+    
+    dig_T1 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    dig_T2 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    dig_T3 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    
+    dig_P1 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    dig_P2 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    dig_P3 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    dig_P4 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    dig_P5 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    dig_P6 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    dig_P7 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    dig_P8 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    dig_P9 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    
+    Wire.beginTransmission(BME280_ADDRESS);
+    Wire.write(0xA1);  // dig_H1
+    Wire.endTransmission();
+    Wire.requestFrom(BME280_ADDRESS, 1);
     dig_H1 = Wire.read();
     
     Wire.beginTransmission(BME280_ADDRESS);
-    Wire.write(BME280_REGISTER_DIG_H2);
+    Wire.write(0xE1);  // dig_H2 bis dig_H6
     Wire.endTransmission();
     Wire.requestFrom(BME280_ADDRESS, 7);
-    dig_H2 = Wire.read() | (Wire.read() << 8);
+    dig_H2 = (Wire.read() | (uint16_t)Wire.read() << 8);
     dig_H3 = Wire.read();
-    dig_H4 = (Wire.read() << 4) | (Wire.read() & 0xF);
-    dig_H5 = ((Wire.read() & 0xF0) >> 4) | (Wire.read() << 4);
+    dig_H4 = ((int8_t)Wire.read() << 4) | (Wire.read() & 0xF);
+    dig_H5 = ((int8_t)Wire.read() << 4) | (Wire.read() >> 4);
     dig_H6 = (int8_t)Wire.read();
 
-    // Set sampling
-    writeReg(BME280_REGISTER_CONTROLHUMID, 0x01);    // humidity oversampling x1
-    writeReg(BME280_REGISTER_CONTROL, 0x27);         // temperature and pressure oversampling x1, mode normal
+    // Sensor-Konfiguration
+    writeReg(0xF2, 0x01);  // humidity oversampling x1
+    writeReg(0xF4, 0x27);  // temp/pressure oversampling x1, normal mode
 }
 
 void BME280::writeReg(uint8_t reg, uint8_t value) {
