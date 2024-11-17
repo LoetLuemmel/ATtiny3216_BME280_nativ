@@ -29,67 +29,64 @@ BME280::BME280() {
 }
 
 void BME280::begin() {
-    // Reset BME280
+    Serial.println("\nBME280 Startup Sequence (Datasheet p.20):");
+    
+    // 1. Power-on-reset
     Wire.beginTransmission(0x76);
-    Wire.write(0xE0);  // Reset register
-    Wire.write(0xB6);  // Reset command
+    Wire.write(0xE0);
+    Wire.write(0xB6);
     Wire.endTransmission();
-    delay(10);  // Wait for reset
+    delay(10);
     
-    Serial.println("\nBME280 Initialization Sequence:");
+    // 2. Read all calibration data
+    Serial.println("\nCalibration Data Read:");
     
-    // 1. Verify chip ID
+    // Temperature & Pressure calibration (0x88-0xA1)
     Wire.beginTransmission(0x76);
-    Wire.write(0xD0);  // chip id register
+    Wire.write(0x88);
+    Wire.endTransmission();
+    Wire.requestFrom(0x76, 26);
+    
+    Serial.println("Temperature & Pressure registers:");
+    for(int i=0; i<26; i++) {
+        uint8_t value = Wire.read();
+        Serial.print("0x88+"); 
+        Serial.print(i, HEX);
+        Serial.print(": 0x");
+        Serial.println(value, HEX);
+    }
+    
+    // H1 calibration (0xA1)
+    Wire.beginTransmission(0x76);
+    Wire.write(0xA1);
     Wire.endTransmission();
     Wire.requestFrom(0x76, 1);
-    uint8_t chipId = Wire.read();
-    Serial.print("Chip ID: 0x");
-    Serial.println(chipId, HEX);  // Should be 0x60
+    dig_H1 = Wire.read();
+    Serial.print("H1 (0xA1): 0x");
+    Serial.println(dig_H1, HEX);
     
-    // 2. Read H3 directly (Register 0xE3)
-    Wire.beginTransmission(0x76);
-    Wire.write(0xE3);
-    Wire.endTransmission();
-    Wire.requestFrom(0x76, 1);
-    uint8_t h3_direct = Wire.read();
-    Serial.print("H3 direct read (0xE3): 0x");
-    Serial.print(h3_direct, HEX);
-    Serial.print(" (");
-    Serial.print(h3_direct);
-    Serial.println(")");
-    
-    // 3. Read calibration block
+    // H2-H6 calibration (0xE1-0xE7)
     Wire.beginTransmission(0x76);
     Wire.write(0xE1);
     Wire.endTransmission();
     Wire.requestFrom(0x76, 7);
     
-    uint8_t e1 = Wire.read();
-    uint8_t e2 = Wire.read();
-    uint8_t e3 = Wire.read();  // H3 in block read
-    uint8_t e4 = Wire.read();
-    uint8_t e5 = Wire.read();
-    uint8_t e6 = Wire.read();
-    uint8_t e7 = Wire.read();
+    uint8_t regs[7];
+    Serial.println("\nHumidity calibration registers:");
     
-    Serial.print("H3 block read (0xE3): 0x");
-    Serial.print(e3, HEX);
-    Serial.print(" (");
-    Serial.print(e3);
-    Serial.println(")");
-    
-    // 4. Compare readings
-    if (h3_direct != e3) {
-        Serial.println("WARNING: H3 values differ between direct and block read!");
+    for(int i=0; i<7; i++) {
+        regs[i] = Wire.read();
+        Serial.print("0xE1+"); 
+        Serial.print(i, HEX);
+        Serial.print(": 0x");
+        Serial.println(regs[i], HEX);
     }
     
-    // 5. Set calibration values
-    dig_H2 = (int16_t)(e2 << 8 | e1);
-    dig_H3 = h3_direct;  // Use direct read value
-    dig_H4 = (int16_t)((e4 << 4) | (e5 & 0x0F));
-    dig_H5 = (int16_t)((e6 << 4) | (e5 >> 4));
-    dig_H6 = (int8_t)e7;
+    dig_H2 = (int16_t)(regs[1] << 8 | regs[0]);
+    dig_H3 = regs[2];  // H3 in block read
+    dig_H4 = (int16_t)((regs[4] << 4) | (regs[5] & 0x0F));
+    dig_H5 = (int16_t)((regs[6] << 4) | (regs[5] >> 4));
+    dig_H6 = (int8_t)regs[7];
     
     Serial.println("\nFinal calibration values:");
     Serial.print("H2: "); Serial.println(dig_H2);
