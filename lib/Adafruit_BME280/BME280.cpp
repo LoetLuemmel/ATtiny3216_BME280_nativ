@@ -89,37 +89,40 @@ void BME280::begin() {
     Wire.endTransmission();
     Wire.requestFrom(0x76, 7);
     
-    // Rohdaten speichern
-    uint8_t regs[7];
-    for(int i=0; i<7; i++) {
-        regs[i] = Wire.read();
-    }
-    
-    // Debug: Rohdaten anzeigen
-    Serial.print("Raw registers (0xE1-0xE7): ");
-    for(int i=0; i<7; i++) {
-        Serial.print("0x");
-        if(regs[i] < 0x10) Serial.print("0");
-        Serial.print(regs[i], HEX);
-        Serial.print(" ");
-    }
-    Serial.println();
+    uint8_t e1 = Wire.read();
+    uint8_t e2 = Wire.read();
+    uint8_t e3 = Wire.read();
+    uint8_t e4 = Wire.read();
+    uint8_t e5 = Wire.read();
+    uint8_t e6 = Wire.read();
+    uint8_t e7 = Wire.read();
+
+    // Bit-Operationen mit detaillierter Debug-Ausgabe
+    Serial.println("\nBME280 Register Raw Values (HEX):");
+    Serial.print("E1-E7: ");
+    Serial.print(e1, HEX); Serial.print(" ");
+    Serial.print(e2, HEX); Serial.print(" ");
+    Serial.print(e3, HEX); Serial.print(" ");
+    Serial.print(e4, HEX); Serial.print(" ");
+    Serial.print(e5, HEX); Serial.print(" ");
+    Serial.print(e6, HEX); Serial.print(" ");
+    Serial.print(e7, HEX); Serial.println(" ");
     
     // Kalibrierungswerte zusammensetzen
-    dig_H2 = (int16_t)(regs[1] << 8 | regs[0]);
-    dig_H3 = (uint8_t)regs[2];
+    dig_H2 = (int16_t)(e2 << 8 | e1);
+    dig_H3 = (uint8_t)e3;
     
     // H4 = 0xE4[7:0] + 0xE5[3:0] << 4
-    int16_t h4_msb = (int16_t)(regs[3] << 4);
-    int16_t h4_lsb = (int16_t)(regs[4] & 0x0F);
+    int16_t h4_msb = (int16_t)(e4 << 4);
+    int16_t h4_lsb = (int16_t)(e5 & 0x0F);
     dig_H4 = h4_msb | h4_lsb;
     
     // H5 = 0xE5[7:4] + 0xE6[7:0] << 4
-    int16_t h5_msb = (int16_t)(regs[5] << 4);
-    int16_t h5_lsb = (int16_t)(regs[4] >> 4);
+    int16_t h5_msb = (int16_t)(e5 << 4);
+    int16_t h5_lsb = (int16_t)(e5 >> 4);
     dig_H5 = h5_msb | h5_lsb;
     
-    dig_H6 = (int8_t)regs[6];
+    dig_H6 = (int8_t)e7;
     
     // Debug: Kalibrierungswerte anzeigen
     Serial.println("\nCalibration values:");
