@@ -29,6 +29,10 @@ BME280::BME280() {
 }
 
 void BME280::begin() {
+    // Sensor aus dem Sleep-Mode holen
+    writeReg(0xF4, 0x00);  // Sleep mode
+    delay(50);  // Warten auf Reset
+    
     // Lese Kalibrierungsdaten
     Wire.beginTransmission(BME280_ADDRESS);
     Wire.write(0x88);  // Start der Kalibrierungsdaten
@@ -38,6 +42,12 @@ void BME280::begin() {
     dig_T1 = (Wire.read() | (uint16_t)Wire.read() << 8);
     dig_T2 = (Wire.read() | (uint16_t)Wire.read() << 8);
     dig_T3 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    
+    // Debug-Ausgaben für Temperatur-Kalibrierung
+    Serial.println("Temperature calibration data:");
+    Serial.print("dig_T1: "); Serial.println(dig_T1);
+    Serial.print("dig_T2: "); Serial.println(dig_T2);
+    Serial.print("dig_T3: "); Serial.println(dig_T3);
     
     dig_P1 = (Wire.read() | (uint16_t)Wire.read() << 8);
     dig_P2 = (Wire.read() | (uint16_t)Wire.read() << 8);
@@ -65,9 +75,24 @@ void BME280::begin() {
     dig_H5 = ((int8_t)Wire.read() << 4) | (Wire.read() >> 4);
     dig_H6 = (int8_t)Wire.read();
 
+    // Debug-Ausgaben für Rohdaten
+    readData();
+    Serial.println("Raw sensor data:");
+    for(int i = 0; i < 8; i++) {
+        Serial.print("data["); Serial.print(i); Serial.print("]: ");
+        Serial.println(data[i], HEX);
+    }
+
     // Sensor-Konfiguration
     writeReg(0xF2, 0x01);  // humidity oversampling x1
+    delay(50);  // Warten auf Konfiguration
     writeReg(0xF4, 0x27);  // temp/pressure oversampling x1, normal mode
+    delay(50);  // Warten auf Moduswechsel
+    
+    // Debug: Konfiguration überprüfen
+    Serial.println("Sensor configuration:");
+    uint8_t config = readReg(0xF4);
+    Serial.print("Control register (0xF4): 0x"); Serial.println(config, HEX);
 }
 
 void BME280::writeReg(uint8_t reg, uint8_t value) {
@@ -78,18 +103,37 @@ void BME280::writeReg(uint8_t reg, uint8_t value) {
 }
 
 void BME280::readData() {
+    // Temperatur-Register direkt lesen (0xFA-0xFC)
     Wire.beginTransmission(BME280_ADDRESS);
-    Wire.write(0xF7);
+    Wire.write(0xFA);  // Temperatur MSB
     Wire.endTransmission();
-    Wire.requestFrom(BME280_ADDRESS, 8);
-    data[0] = Wire.read();
-    data[1] = Wire.read();
-    data[2] = Wire.read();
-    data[3] = Wire.read();
-    data[4] = Wire.read();
-    data[5] = Wire.read();
-    data[6] = Wire.read();
-    data[7] = Wire.read();
+    Wire.requestFrom(BME280_ADDRESS, 3);
+    data[3] = Wire.read();  // MSB
+    data[4] = Wire.read();  // LSB
+    data[5] = Wire.read();  // XLSB
+    
+    // Debug für Temperatur-Bytes
+    Serial.println("Temperature raw bytes:");
+    Serial.print("MSB (data[3]): 0x"); Serial.println(data[3], HEX);
+    Serial.print("LSB (data[4]): 0x"); Serial.println(data[4], HEX);
+    Serial.print("XLSB (data[5]): 0x"); Serial.println(data[5], HEX);
+    
+    // Druck-Register direkt lesen (0xF7-0xF9)
+    Wire.beginTransmission(BME280_ADDRESS);
+    Wire.write(0xF7);  // Druck MSB
+    Wire.endTransmission();
+    Wire.requestFrom(BME280_ADDRESS, 3);
+    data[0] = Wire.read();  // MSB
+    data[1] = Wire.read();  // LSB
+    data[2] = Wire.read();  // XLSB
+    
+    // Feuchtigkeits-Register direkt lesen (0xFD-0xFE)
+    Wire.beginTransmission(BME280_ADDRESS);
+    Wire.write(0xFD);  // Feuchtigkeit MSB
+    Wire.endTransmission();
+    Wire.requestFrom(BME280_ADDRESS, 2);
+    data[6] = Wire.read();  // MSB
+    data[7] = Wire.read();  // LSB
 }
 
 float BME280::readTemperature() {
@@ -97,8 +141,15 @@ float BME280::readTemperature() {
     
     int32_t adc_T = ((uint32_t)data[3] << 12) | ((uint32_t)data[4] << 4) | ((data[5] >> 4) & 0x0F);
     
+    // Debug-Ausgabe für ADC-Wert
+    Serial.print("adc_T: "); Serial.println(adc_T);
+    
     int32_t var1 = ((((adc_T >> 3) - ((int32_t)dig_T1 << 1))) * ((int32_t)dig_T2)) >> 11;
     int32_t var2 = (((((adc_T >> 4) - ((int32_t)dig_T1)) * ((adc_T >> 4) - ((int32_t)dig_T1))) >> 12) * ((int32_t)dig_T3)) >> 14;
+    
+    // Debug-Ausgaben für Zwischenberechnungen
+    Serial.print("var1: "); Serial.println(var1);
+    Serial.print("var2: "); Serial.println(var2);
     
     t_fine = var1 + var2;
     float T = (t_fine * 5 + 128) >> 8;
@@ -145,4 +196,13 @@ float BME280::readHumidity() {
     v_x1_u32r = (v_x1_u32r > 419430400) ? 419430400 : v_x1_u32r;
     
     return (float)(v_x1_u32r >> 12) / 1024.0;
+}
+
+// Neue Hilfsfunktion zum Lesen eines Registers
+uint8_t BME280::readReg(uint8_t reg) {
+    Wire.beginTransmission(BME280_ADDRESS);
+    Wire.write(reg);
+    Wire.endTransmission();
+    Wire.requestFrom(BME280_ADDRESS, 1);
+    return Wire.read();
 } 
