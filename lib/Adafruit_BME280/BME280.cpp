@@ -81,51 +81,41 @@ void BME280::begin() {
     
     Serial.println("\nBME280 Register Analysis (Datasheet p.25):");
     
-    // H4 Analyse (0xE4/0xE5[3:0])
-    Serial.print("H4 Raw: E4=0x");
-    Serial.print(e4, HEX);
-    Serial.print(", E5[3:0]=0x");
-    Serial.print(e5 & 0x0F, HEX);
-    Serial.print(" -> ");
-    Serial.print(e4, BIN);
-    Serial.print(" ");
-    Serial.println(e5 & 0x0F, BIN);
+    // H4 = (signed)(E4 << 4) + (E5 & 0x0F)
+    Serial.print("H4 Raw: E4=0x"); Serial.print(e4, HEX);
+    Serial.print(" ("); Serial.print(e4, BIN); Serial.print(")");
+    Serial.print(", E5[3:0]=0x"); Serial.print(e5 & 0x0F, HEX);
+    Serial.print(" ("); Serial.print(e5 & 0x0F, BIN); Serial.println(")");
     
-    // H5 Analyse (0xE5[7:4]/0xE6)
-    Serial.print("H5 Raw: E6=0x");
-    Serial.print(e6, HEX);
-    Serial.print(", E5[7:4]=0x");
-    Serial.print(e5 >> 4, HEX);
-    Serial.print(" -> ");
-    Serial.print(e6, BIN);
-    Serial.print(" ");
-    Serial.println(e5 >> 4, BIN);
+    int16_t h4_msb = ((int16_t)(int8_t)e4) << 4;  // Cast zu signed
+    int16_t h4_lsb = (e5 & 0x0F);
+    dig_H4 = h4_msb + h4_lsb;
+    
+    Serial.print("H4 steps: (signed)0x"); Serial.print(e4, HEX);
+    Serial.print(" << 4 = 0x"); Serial.print(h4_msb, HEX);
+    Serial.print(" + 0x"); Serial.print(h4_lsb, HEX);
+    Serial.print(" = 0x"); Serial.print(dig_H4, HEX);
+    Serial.print(" ("); Serial.print(dig_H4); Serial.println(")");
+    
+    // H5 = (signed)(E6 << 4) + (E5 >> 4)
+    Serial.print("H5 Raw: E6=0x"); Serial.print(e6, HEX);
+    Serial.print(" ("); Serial.print(e6, BIN); Serial.print(")");
+    Serial.print(", E5[7:4]=0x"); Serial.print(e5 >> 4, HEX);
+    Serial.print(" ("); Serial.print(e5 >> 4, BIN); Serial.println(")");
+    
+    int16_t h5_msb = ((int16_t)(int8_t)e6) << 4;  // Cast zu signed
+    int16_t h5_lsb = (e5 >> 4);
+    dig_H5 = h5_msb + h5_lsb;
+    
+    Serial.print("H5 steps: (signed)0x"); Serial.print(e6, HEX);
+    Serial.print(" << 4 = 0x"); Serial.print(h5_msb, HEX);
+    Serial.print(" + 0x"); Serial.print(h5_lsb, HEX);
+    Serial.print(" = 0x"); Serial.print(dig_H5, HEX);
+    Serial.print(" ("); Serial.print(dig_H5); Serial.println(")");
     
     // Kalibrierungswerte setzen
     dig_H2 = (int16_t)(e2 << 8 | e1);
     dig_H3 = (uint8_t)e3;
-    
-    // H4 = (0xE4 << 4) | (0xE5[3:0])
-    int16_t h4_msb = ((int16_t)e4) << 4;
-    int16_t h4_lsb = (e5 & 0x0F);
-    dig_H4 = h4_msb | h4_lsb;
-    Serial.print("H4 calculation: 0x");
-    Serial.print(e4, HEX);
-    Serial.print(" << 4 | 0x");
-    Serial.print(e5 & 0x0F, HEX);
-    Serial.print(" = ");
-    Serial.println(dig_H4);
-    
-    // H5 = (0xE6 << 4) | (0xE5[7:4])
-    int16_t h5_msb = ((int16_t)e6) << 4;
-    int16_t h5_lsb = (e5 >> 4);
-    dig_H5 = h5_msb | h5_lsb;
-    Serial.print("H5 calculation: 0x");
-    Serial.print(e6, HEX);
-    Serial.print(" << 4 | 0x");
-    Serial.print(e5 >> 4, HEX);
-    Serial.print(" = ");
-    Serial.println(dig_H5);
     
     dig_H6 = (int8_t)e7;
     
