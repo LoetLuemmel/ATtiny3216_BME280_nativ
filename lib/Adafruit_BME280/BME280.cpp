@@ -29,43 +29,19 @@ BME280::BME280() {
 }
 
 void BME280::begin() {
-    delay(100);  // Startup delay
+    Wire.begin();
+    Wire.setClock(100000);
+    delay(100);
     
-    // Versuche die Chip ID mehrmals zu lesen
-    for(int attempt = 0; attempt < 3; attempt++) {
-        Wire.beginTransmission(0x76);
-        Wire.write(0xD0);
-        byte error = Wire.endTransmission();
-        
-        Serial.print("I2C transmission error code: ");
-        Serial.println(error);
-        // error=0: success
-        // error=1: data too long
-        // error=2: NACK on transmit of address
-        // error=3: NACK on transmit of data
-        // error=4: other error
-        
-        if (error == 0) {
-            delay(10);  // Wait before reading
-            Wire.requestFrom(0x76, 1);
-            if (Wire.available()) {
-                uint8_t chipId = Wire.read();
-                Serial.print("BME280 Chip ID: 0x");
-                Serial.println(chipId, HEX);
-                if (chipId == 0x60) {
-                    Serial.println("Found correct BME280 chip ID!");
-                    break;
-                }
-            }
-        }
-        
-        delay(100);  // Wait before next attempt
-        Serial.println("Retrying...");
-    }
+    Serial.println("I2C initialized");
+    Serial.print("Attempting to read BME280 at address 0x");
+    Serial.println(BME280_ADDRESS, HEX);
     
-    // Rest der Initialisierung
-    writeReg(0xF2, 0x01);  // humidity oversampling x1
-    writeReg(0xF4, 0x27);  // temp/pressure oversampling x1, normal mode
+    Wire.beginTransmission(BME280_ADDRESS);
+    Wire.write(0xD0);
+    byte error = Wire.endTransmission();
+    Serial.print("I2C error code: ");
+    Serial.println(error);
 }
 
 void BME280::writeReg(uint8_t reg, uint8_t value) {
