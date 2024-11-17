@@ -71,29 +71,77 @@ void BME280::begin() {
     Wire.endTransmission();
     Wire.requestFrom(0x76, 7);
     
-    uint8_t regs[7];
-    Serial.println("\nHumidity calibration registers:");
+    uint8_t e1 = Wire.read();
+    uint8_t e2 = Wire.read();
+    uint8_t e3 = Wire.read();
+    uint8_t e4 = Wire.read();
+    uint8_t e5 = Wire.read();
+    uint8_t e6 = Wire.read();
+    uint8_t e7 = Wire.read();
     
-    for(int i=0; i<7; i++) {
-        regs[i] = Wire.read();
-        Serial.print("0xE1+"); 
-        Serial.print(i, HEX);
-        Serial.print(": 0x");
-        Serial.println(regs[i], HEX);
-    }
+    Serial.println("\nBME280 Register Analysis (Datasheet p.25):");
     
-    dig_H2 = (int16_t)(regs[1] << 8 | regs[0]);
-    dig_H3 = regs[2];  // H3 in block read
-    dig_H4 = (int16_t)((regs[4] << 4) | (regs[5] & 0x0F));
-    dig_H5 = (int16_t)((regs[6] << 4) | (regs[5] >> 4));
-    dig_H6 = (int8_t)regs[7];
+    // H4 Analyse (0xE4/0xE5[3:0])
+    Serial.print("H4 Raw: E4=0x");
+    Serial.print(e4, HEX);
+    Serial.print(", E5[3:0]=0x");
+    Serial.print(e5 & 0x0F, HEX);
+    Serial.print(" -> ");
+    Serial.print(e4, BIN);
+    Serial.print(" ");
+    Serial.println(e5 & 0x0F, BIN);
+    
+    // H5 Analyse (0xE5[7:4]/0xE6)
+    Serial.print("H5 Raw: E6=0x");
+    Serial.print(e6, HEX);
+    Serial.print(", E5[7:4]=0x");
+    Serial.print(e5 >> 4, HEX);
+    Serial.print(" -> ");
+    Serial.print(e6, BIN);
+    Serial.print(" ");
+    Serial.println(e5 >> 4, BIN);
+    
+    // Kalibrierungswerte setzen
+    dig_H2 = (int16_t)(e2 << 8 | e1);
+    dig_H3 = (uint8_t)e3;
+    
+    // H4 = (0xE4 << 4) | (0xE5[3:0])
+    int16_t h4_msb = ((int16_t)e4) << 4;
+    int16_t h4_lsb = (e5 & 0x0F);
+    dig_H4 = h4_msb | h4_lsb;
+    Serial.print("H4 calculation: 0x");
+    Serial.print(e4, HEX);
+    Serial.print(" << 4 | 0x");
+    Serial.print(e5 & 0x0F, HEX);
+    Serial.print(" = ");
+    Serial.println(dig_H4);
+    
+    // H5 = (0xE6 << 4) | (0xE5[7:4])
+    int16_t h5_msb = ((int16_t)e6) << 4;
+    int16_t h5_lsb = (e5 >> 4);
+    dig_H5 = h5_msb | h5_lsb;
+    Serial.print("H5 calculation: 0x");
+    Serial.print(e6, HEX);
+    Serial.print(" << 4 | 0x");
+    Serial.print(e5 >> 4, HEX);
+    Serial.print(" = ");
+    Serial.println(dig_H5);
+    
+    dig_H6 = (int8_t)e7;
     
     Serial.println("\nFinal calibration values:");
-    Serial.print("H2: "); Serial.println(dig_H2);
-    Serial.print("H3: "); Serial.println(dig_H3);
-    Serial.print("H4: "); Serial.println(dig_H4);
-    Serial.print("H5: "); Serial.println(dig_H5);
-    Serial.print("H6: "); Serial.println(dig_H6);
+    Serial.print("H2 (int16_t):  "); Serial.println(dig_H2);
+    Serial.print("H3 (uint8_t):  "); Serial.println(dig_H3);
+    Serial.print("H4 (int16_t):  "); Serial.println(dig_H4);
+    Serial.print("H5 (int16_t):  "); Serial.println(dig_H5);
+    Serial.print("H6 (int8_t):   "); Serial.println(dig_H6);
+    
+    Serial.println("\nValidation (expected ranges):");
+    Serial.println("H2: 300-400  (typically 385)");
+    Serial.println("H3: 0-50     (typically 30)");
+    Serial.println("H4: 600-800  (typically 707)");
+    Serial.println("H5: 400-500  (typically 480)");
+    Serial.println("H6: 20-40    (typically 30)");
     
     // 6. Configure sensor
     Wire.beginTransmission(0x76);
