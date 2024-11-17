@@ -70,19 +70,23 @@ void BME280::writeReg(uint8_t reg, uint8_t value) {
     Wire.endTransmission();
 }
 
-void BME280::readData(uint8_t *data) {
+void BME280::readData() {
     Wire.beginTransmission(BME280_ADDRESS);
-    Wire.write(BME280_REGISTER_DATA);
+    Wire.write(0xF7);
     Wire.endTransmission();
     Wire.requestFrom(BME280_ADDRESS, 8);
-    for(int i = 0; i < 8; i++) {
-        data[i] = Wire.read();
-    }
+    data[0] = Wire.read();
+    data[1] = Wire.read();
+    data[2] = Wire.read();
+    data[3] = Wire.read();
+    data[4] = Wire.read();
+    data[5] = Wire.read();
+    data[6] = Wire.read();
+    data[7] = Wire.read();
 }
 
 float BME280::readTemperature() {
-    uint8_t data[8];
-    readData(data);
+    readData();
     
     int32_t adc_T = ((uint32_t)data[3] << 12) | ((uint32_t)data[4] << 4) | ((data[5] >> 4) & 0x0F);
     
@@ -95,8 +99,7 @@ float BME280::readTemperature() {
 }
 
 float BME280::readPressure() {
-    uint8_t data[8];
-    readData(data);
+    readData();
     
     int32_t adc_P = ((uint32_t)data[0] << 12) | ((uint32_t)data[1] << 4) | ((data[2] >> 4) & 0x0F);
     
@@ -117,12 +120,11 @@ float BME280::readPressure() {
     var2 = (((int64_t)dig_P8) * p) >> 19;
     
     p = ((p + var1 + var2) >> 8) + (((int64_t)dig_P7) << 4);
-    return (float)p / 256;
+    return (float)p / 256.0;
 }
 
 float BME280::readHumidity() {
-    uint8_t data[8];
-    readData(data);
+    readData();
     
     int32_t adc_H = ((uint32_t)data[6] << 8) | data[7];
     
