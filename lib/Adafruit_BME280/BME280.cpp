@@ -81,37 +81,47 @@ void BME280::begin() {
     
     Serial.println("\nBME280 Register Analysis (Datasheet p.25):");
     
-    // H4 = (signed)(E4 << 4) + (E5 & 0x0F)
+    // H4 = ((E4 << 4) | (E5 & 0x0F)) * 2.8
     Serial.print("H4 Raw: E4=0x"); Serial.print(e4, HEX);
     Serial.print(" ("); Serial.print(e4, BIN); Serial.print(")");
     Serial.print(", E5[3:0]=0x"); Serial.print(e5 & 0x0F, HEX);
     Serial.print(" ("); Serial.print(e5 & 0x0F, BIN); Serial.println(")");
     
-    int16_t h4_msb = ((int16_t)(int8_t)e4) << 4;  // Cast zu signed
-    int16_t h4_lsb = (e5 & 0x0F);
-    dig_H4 = h4_msb + h4_lsb;
+    // Erst die Bit-Operationen
+    int16_t h4_raw = (e4 << 4) | (e5 & 0x0F);  // 0x10C = 268
+    if (h4_raw & 0x0800) {  // Check sign bit
+        h4_raw |= 0xF000;    // Sign extend
+    }
     
-    Serial.print("H4 steps: (signed)0x"); Serial.print(e4, HEX);
-    Serial.print(" << 4 = 0x"); Serial.print(h4_msb, HEX);
-    Serial.print(" + 0x"); Serial.print(h4_lsb, HEX);
-    Serial.print(" = 0x"); Serial.print(dig_H4, HEX);
-    Serial.print(" ("); Serial.print(dig_H4); Serial.println(")");
+    // Dann die Skalierung
+    dig_H4 = (int16_t)(h4_raw * 2.8f + 0.5f);  // 268 * 2.8 ≈ 707
     
-    // H5 = (signed)(E6 << 4) + (E5 >> 4)
+    Serial.print("H4 steps: (0x"); Serial.print(e4, HEX);
+    Serial.print(" << 4) | 0x"); Serial.print(e5 & 0x0F, HEX);
+    Serial.print(" = 0x"); Serial.print(h4_raw, HEX);
+    Serial.print(" * 2.8 = "); Serial.print(dig_H4);
+    Serial.print(" (0x"); Serial.print(dig_H4, HEX); Serial.println(")");
+    
+    // H5 = ((E6 << 4) | (E5 >> 4)) * 2.8
     Serial.print("H5 Raw: E6=0x"); Serial.print(e6, HEX);
     Serial.print(" ("); Serial.print(e6, BIN); Serial.print(")");
     Serial.print(", E5[7:4]=0x"); Serial.print(e5 >> 4, HEX);
     Serial.print(" ("); Serial.print(e5 >> 4, BIN); Serial.println(")");
     
-    int16_t h5_msb = ((int16_t)(int8_t)e6) << 4;  // Cast zu signed
-    int16_t h5_lsb = (e5 >> 4);
-    dig_H5 = h5_msb + h5_lsb;
+    // Gleiche Logik für H5
+    int16_t h5_raw = (e6 << 4) | (e5 >> 4);  // 0x32 = 50
+    if (h5_raw & 0x0800) {  // Check sign bit
+        h5_raw |= 0xF000;    // Sign extend
+    }
     
-    Serial.print("H5 steps: (signed)0x"); Serial.print(e6, HEX);
-    Serial.print(" << 4 = 0x"); Serial.print(h5_msb, HEX);
-    Serial.print(" + 0x"); Serial.print(h5_lsb, HEX);
-    Serial.print(" = 0x"); Serial.print(dig_H5, HEX);
-    Serial.print(" ("); Serial.print(dig_H5); Serial.println(")");
+    // Skalierung
+    dig_H5 = (int16_t)(h5_raw * 9.6f + 0.5f);  // 50 * 9.6 = 480
+    
+    Serial.print("H5 steps: (0x"); Serial.print(e6, HEX);
+    Serial.print(" << 4) | 0x"); Serial.print(e5 >> 4, HEX);
+    Serial.print(" = 0x"); Serial.print(h5_raw, HEX);
+    Serial.print(" * 9.6 = "); Serial.print(dig_H5);
+    Serial.print(" (0x"); Serial.print(dig_H5, HEX); Serial.println(")");
     
     // Kalibrierungswerte setzen
     dig_H2 = (int16_t)(e2 << 8 | e1);
