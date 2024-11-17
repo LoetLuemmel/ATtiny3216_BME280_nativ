@@ -13,15 +13,21 @@ void setup() {
     Serial.println("Start");
     
     Serial.println("Init I2C...");
-    Wire.begin();  // Standard I2C ohne swap
-    Wire.setClock(100000);  // Standard 100kHz
+    Wire.begin();
+    Wire.setClock(100000);
     delay(100);
     
-    // Nur die valide Adresse testen
-    Serial.println("Testing BME280 at 0x76...");
-    byte available = Wire.requestFrom(0x76, 1);
-    Serial.print("Response: ");
-    Serial.println(available);
+    Serial.println("Reading BME280 ID...");
+    Wire.beginTransmission(0x76);
+    Wire.write(0xD0);  // ID Register
+    Wire.endTransmission();
+    
+    if (Wire.requestFrom(0x76, 1)) {
+        byte chipId = Wire.read();
+        Serial.print("Chip ID: 0x");
+        Serial.println(chipId, HEX);
+        // Sollte 0x60 sein für BME280
+    }
     
     Serial.println("Setup complete");
 }
