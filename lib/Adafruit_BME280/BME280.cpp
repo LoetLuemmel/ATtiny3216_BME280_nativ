@@ -235,22 +235,31 @@ float BME280::readHumidity() {
     
     Wire.requestFrom(0x76, 2);
     if (Wire.available() >= 2) {
-        uint16_t adc_H = Wire.read() << 8 | Wire.read();
+        int32_t adc_H = Wire.read() << 8 | Wire.read();
         
         Serial.print("Raw humidity: 0x");
         Serial.println(adc_H, HEX);
+        Serial.print("t_fine: ");
+        Serial.println(t_fine);
         
-        int32_t v_x1_u32r;
-        v_x1_u32r = (t_fine - ((int32_t)76800));
-        v_x1_u32r = (((((adc_H << 14) - (((int32_t)dig_H4) << 20) - (((int32_t)dig_H5) * v_x1_u32r)) +
-                    ((int32_t)16384)) >> 15) * (((((((v_x1_u32r * ((int32_t)dig_H6)) >> 10) * (((v_x1_u32r *
-                    ((int32_t)dig_H3)) >> 11) + ((int32_t)32768))) >> 10) + ((int32_t)2097152)) *
-                    ((int32_t)dig_H2) + 8192) >> 14));
-        v_x1_u32r = (v_x1_u32r - (((((v_x1_u32r >> 15) * (v_x1_u32r >> 15)) >> 7) * ((int32_t)dig_H1)) >> 4));
-        v_x1_u32r = (v_x1_u32r < 0) ? 0 : v_x1_u32r;
-        v_x1_u32r = (v_x1_u32r > 419430400) ? 419430400 : v_x1_u32r;
+        // Vereinfachte Berechnung zum Testen
+        int32_t v_x1 = t_fine - 76800;
+        int32_t v_x2 = adc_H * 16384;
+        int32_t v_x3 = dig_H4 * 1048576;
+        int32_t v_x4 = dig_H5 * v_x1;
+        int32_t v_x5 = (v_x2 - v_x3 - v_x4 + 16384) >> 15;
         
-        return (float)(v_x1_u32r >> 12) / 1024.0;
+        Serial.println("Calculation steps:");
+        Serial.print("v_x1: "); Serial.println(v_x1);
+        Serial.print("v_x2: "); Serial.println(v_x2);
+        Serial.print("v_x3: "); Serial.println(v_x3);
+        Serial.print("v_x4: "); Serial.println(v_x4);
+        Serial.print("v_x5: "); Serial.println(v_x5);
+        
+        int32_t humidity = (v_x5 * dig_H2) >> 10;
+        humidity = constrain(humidity, 0, 102400);
+        
+        return (float)humidity / 1024.0;
     }
     return 0;
 }
