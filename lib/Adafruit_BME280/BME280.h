@@ -4,6 +4,10 @@
 #include <Arduino.h>
 #include <Wire.h>
 
+#define I2C_SDA PIN_PB1
+#define I2C_SCL PIN_PB0
+#define BME280_ADDRESS 0x76
+
 class BME280 {
     public:
         BME280();
