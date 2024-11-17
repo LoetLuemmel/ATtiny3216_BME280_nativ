@@ -236,29 +236,36 @@ float BME280::readHumidity() {
     if (Wire.available() >= 2) {
         int32_t adc_H = Wire.read() << 8 | Wire.read();
         
-        Serial.print("Raw humidity: 0x");
-        Serial.println(adc_H, HEX);
-        Serial.print("t_fine: ");
-        Serial.println(t_fine);
+        // Debug: Zeige Kalibrierungswerte
+        Serial.println("\nHumidity calculation:");
+        Serial.print("dig_H1: "); Serial.println(dig_H1);
+        Serial.print("dig_H2: "); Serial.println(dig_H2);
+        Serial.print("dig_H3: "); Serial.println(dig_H3);
+        Serial.print("dig_H4: "); Serial.println(dig_H4);
+        Serial.print("dig_H5: "); Serial.println(dig_H5);
+        Serial.print("dig_H6: "); Serial.println(dig_H6);
+        Serial.print("adc_H: "); Serial.println(adc_H);
         
-        // Originale Formel aus dem Datenblatt
+        // Korrigierte Berechnung nach Datenblatt
         int32_t v_x1_u32r = t_fine - ((int32_t)76800);
-        Serial.print("v_x1_u32r: "); Serial.println(v_x1_u32r);
+        int32_t v_x2_u32r = (((((adc_H << 14) - (((int32_t)dig_H4) << 20) - 
+                            (((int32_t)dig_H5) * v_x1_u32r)) + 16384) >> 15) * 
+                            (((((((v_x1_u32r * ((int32_t)dig_H6)) >> 10) * 
+                            (((v_x1_u32r * ((int32_t)dig_H3)) >> 11) + 32768)) >> 10) + 
+                            2097152) * ((int32_t)dig_H2) + 8192) >> 14));
         
-        v_x1_u32r = (((((adc_H << 14) - (((int32_t)dig_H4) << 20) - (((int32_t)dig_H5) * v_x1_u32r)) + 
-                   ((int32_t)16384)) >> 15) * (((((((v_x1_u32r * ((int32_t)dig_H6)) >> 10) * 
-                   (((v_x1_u32r * ((int32_t)dig_H3)) >> 11) + ((int32_t)32768))) >> 10) + 
-                   ((int32_t)2097152)) * ((int32_t)dig_H2) + 8192) >> 14));
+        v_x1_u32r = v_x2_u32r - (((((v_x2_u32r >> 15) * (v_x2_u32r >> 15)) >> 7) * 
+                   ((int32_t)dig_H1)) >> 4);
         
-        v_x1_u32r = (v_x1_u32r - (((((v_x1_u32r >> 15) * (v_x1_u32r >> 15)) >> 7) * 
-                   ((int32_t)dig_H1)) >> 4));
-        
-        Serial.print("Final v_x1_u32r: "); Serial.println(v_x1_u32r);
+        Serial.print("v_x1_u32r before limit: "); Serial.println(v_x1_u32r);
         
         v_x1_u32r = (v_x1_u32r < 0) ? 0 : v_x1_u32r;
         v_x1_u32r = (v_x1_u32r > 419430400) ? 419430400 : v_x1_u32r;
         
-        return (float)(v_x1_u32r >> 12) / 1024.0;
+        float h = (float)(v_x1_u32r >> 12) / 1024.0;
+        Serial.print("Final humidity: "); Serial.println(h);
+        
+        return h;
     }
     return 0;
 }
