@@ -188,6 +188,84 @@ void BME280::begin() {
     if(dig_H3 == 0) {
         Serial.println("\nWARNING: H3 is zero - calibration may be incorrect!");
     }
+
+    // Kalibrierungswerte nach Datenblatt Seite 24, Table 16
+    Serial.println("\nBME280 Calibration Data Read:");
+    
+    // H1 ist in Register 0xA1
+    Wire.beginTransmission(0x76);
+    Wire.write(0xA1);
+    Wire.endTransmission();
+    Wire.requestFrom(0x76, 1);
+    dig_H1 = Wire.read();
+    Serial.print("H1 (0xA1): "); Serial.println(dig_H1);
+    
+    // H2 bis H6 sind in 0xE1 bis 0xE7
+    Wire.beginTransmission(0x76);
+    Wire.write(0xE1);
+    Wire.endTransmission();
+    Wire.requestFrom(0x76, 7);
+    
+    // Rohdaten speichern
+    uint8_t raw[7];
+    for(int i=0; i<7; i++) {
+        raw[i] = Wire.read();
+    }
+    
+    Serial.println("\nRaw calibration bytes:");
+    Serial.print("E1-E7: ");
+    for(int i=0; i<7; i++) {
+        if(raw[i] < 0x10) Serial.print("0");
+        Serial.print(raw[i], HEX);
+        Serial.print(" ");
+    }
+    Serial.println();
+    
+    // Kalibrierungswerte nach Datenblatt zusammensetzen
+    dig_H2 = (int16_t)((raw[1] << 8) | raw[0]);
+    dig_H3 = (uint8_t)raw[2];
+    dig_H4 = (int16_t)((raw[3] << 4) | (raw[4] & 0x0F));
+    dig_H5 = (int16_t)((raw[5] << 4) | (raw[4] >> 4));
+    dig_H6 = (int8_t)raw[6];
+    
+    Serial.println("\nCalibration values:");
+    Serial.println("Reg  | Raw Data | Value | Expected Range");
+    Serial.println("-----|----------|-------|---------------");
+    Serial.print("H1   | 0x");
+    Serial.print(dig_H1, HEX);
+    Serial.print("     | ");
+    Serial.print(dig_H1);
+    Serial.println(" | 75-85");
+    
+    Serial.print("H2   | 0x");
+    Serial.print(raw[1], HEX); Serial.print(raw[0], HEX);
+    Serial.print(" | ");
+    Serial.print(dig_H2);
+    Serial.println(" | 300-400");
+    
+    Serial.print("H3   | 0x");
+    Serial.print(raw[2], HEX);
+    Serial.print("     | ");
+    Serial.print(dig_H3);
+    Serial.println(" | 10-50 <-- Problem!");
+    
+    Serial.print("H4   | 0x");
+    Serial.print(raw[3], HEX); Serial.print(raw[4], HEX);
+    Serial.print(" | ");
+    Serial.print(dig_H4);
+    Serial.println(" | 250-350");
+    
+    Serial.print("H5   | 0x");
+    Serial.print(raw[5], HEX); Serial.print(raw[4], HEX);
+    Serial.print(" | ");
+    Serial.print(dig_H5);
+    Serial.println(" | 40-60");
+    
+    Serial.print("H6   | 0x");
+    Serial.print(raw[6], HEX);
+    Serial.print("     | ");
+    Serial.print(dig_H6);
+    Serial.println(" | 20-40");
 }
 
 void BME280::writeReg(uint8_t reg, uint8_t value) {
@@ -305,12 +383,21 @@ float BME280::readHumidity() {
     adc_H <<= 8;
     adc_H |= Wire.read();
     
-    Serial.println("\nBME280 Humidity Compensation (Datasheet p.25):");
-    Serial.print("1. ADC_H: "); Serial.println(adc_H);
-    Serial.print("2. t_fine: "); Serial.println(t_fine);
-    
+    // Temperatur-Kompensation
     int32_t v_x1_u32r = t_fine - ((int32_t)76800);
-    Serial.print("3. v_x1_u32r: "); Serial.println(v_x1_u32r);
+    
+    Serial.println("\nBME280 Humidity Formula Analysis:");
+    Serial.print("ADC_H: "); Serial.println(adc_H);
+    Serial.print("t_fine: "); Serial.println(t_fine);
+    Serial.print("v_x1_u32r: "); Serial.println(v_x1_u32r);
+    
+    Serial.println("\nCalibration values used:");
+    Serial.print("H1: "); Serial.println(dig_H1);
+    Serial.print("H2: "); Serial.println(dig_H2);
+    Serial.print("H3: "); Serial.println(dig_H3);
+    Serial.print("H4: "); Serial.println(dig_H4);
+    Serial.print("H5: "); Serial.println(dig_H5);
+    Serial.print("H6: "); Serial.println(dig_H6);
     
     // Erste Phase - Bit für Bit nach Datenblatt
     int32_t v_x1 = adc_H << 14;
@@ -319,7 +406,7 @@ float BME280::readHumidity() {
     v_x1 -= ((int32_t)dig_H4) << 20;
     Serial.print("4b. After H4: "); Serial.println(v_x1);
     
-    v_x1 -= ((int32_t)dig_H5) * v_x1_u32r;
+    v_x1 -= ((int32_t)dig_H5) * (t_fine - ((int32_t)76800));
     Serial.print("4c. After H5: "); Serial.println(v_x1);
     
     v_x1 += ((int32_t)16384);
