@@ -29,18 +29,38 @@ BME280::BME280() {
 }
 
 void BME280::begin() {
-    // Chip ID aus Register 0xD0 lesen
-    Wire.beginTransmission(0x76);
-    Wire.write(0xD0);
-    Wire.endTransmission();
+    delay(100);  // Startup delay
     
-    Wire.requestFrom(0x76, 1);
-    if (Wire.available()) {
-        uint8_t chipId = Wire.read();
-        Serial.print("BME280 Chip ID: 0x");
-        Serial.println(chipId, HEX);
-    } else {
-        Serial.println("Could not read chip ID!");
+    // Versuche die Chip ID mehrmals zu lesen
+    for(int attempt = 0; attempt < 3; attempt++) {
+        Wire.beginTransmission(0x76);
+        Wire.write(0xD0);
+        byte error = Wire.endTransmission();
+        
+        Serial.print("I2C transmission error code: ");
+        Serial.println(error);
+        // error=0: success
+        // error=1: data too long
+        // error=2: NACK on transmit of address
+        // error=3: NACK on transmit of data
+        // error=4: other error
+        
+        if (error == 0) {
+            delay(10);  // Wait before reading
+            Wire.requestFrom(0x76, 1);
+            if (Wire.available()) {
+                uint8_t chipId = Wire.read();
+                Serial.print("BME280 Chip ID: 0x");
+                Serial.println(chipId, HEX);
+                if (chipId == 0x60) {
+                    Serial.println("Found correct BME280 chip ID!");
+                    break;
+                }
+            }
+        }
+        
+        delay(100);  // Wait before next attempt
+        Serial.println("Retrying...");
     }
     
     // Rest der Initialisierung
