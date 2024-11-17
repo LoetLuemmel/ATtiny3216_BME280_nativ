@@ -29,8 +29,6 @@ BME280::BME280() {
 }
 
 void BME280::begin() {
-    Serial.println("\nBME280 Initialization:");
-    
     // Reset
     Wire.beginTransmission(0x76);
     Wire.write(0xE0);
@@ -44,14 +42,12 @@ void BME280::begin() {
     Wire.endTransmission();
     Wire.requestFrom(0x76, 1);
     uint8_t chipID = Wire.read();
-    Serial.print("Chip ID: 0x");
-    Serial.println(chipID, HEX);
     
     if (chipID != 0x60) {
         Serial.println("BME280 not found!");
         return;
     }
-    Serial.println("BME280 found!");
+    Serial.println("BME280 found! (ID: 0x60)");
     
     // Read calibration data
     readCalibrationData();
@@ -67,7 +63,7 @@ void BME280::begin() {
     Wire.write(0xB7);  // 16x oversampling, normal mode
     Wire.endTransmission();
     
-    Serial.println("Setup complete");
+    Serial.println("BME280 initialization complete");
 }
 
 void BME280::readCalibrationData() {
@@ -77,7 +73,19 @@ void BME280::readCalibrationData() {
     Wire.endTransmission();
     Wire.requestFrom(0x76, 26);
     
-    // ... Temperature & Pressure calibration ...
+    dig_T1 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    dig_T2 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    dig_T3 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    
+    dig_P1 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    dig_P2 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    dig_P3 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    dig_P4 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    dig_P5 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    dig_P6 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    dig_P7 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    dig_P8 = (Wire.read() | (uint16_t)Wire.read() << 8);
+    dig_P9 = (Wire.read() | (uint16_t)Wire.read() << 8);
     
     // Read H1 (0xA1)
     Wire.beginTransmission(0x76);
@@ -121,37 +129,19 @@ void BME280::writeReg(uint8_t reg, uint8_t value) {
 }
 
 void BME280::readData() {
-    // Temperatur-Register direkt lesen (0xFA-0xFC)
-    Wire.beginTransmission(BME280_ADDRESS);
-    Wire.write(0xFA);  // Temperatur MSB
+    Wire.beginTransmission(0x76);
+    Wire.write(0xF7);
     Wire.endTransmission();
-    Wire.requestFrom(BME280_ADDRESS, 3);
-    data[3] = Wire.read();  // MSB
-    data[4] = Wire.read();  // LSB
-    data[5] = Wire.read();  // XLSB
+    Wire.requestFrom(0x76, 8);
     
-    // Debug für Temperatur-Bytes
-    Serial.println("Temperature raw bytes:");
-    Serial.print("MSB (data[3]): 0x"); Serial.println(data[3], HEX);
-    Serial.print("LSB (data[4]): 0x"); Serial.println(data[4], HEX);
-    Serial.print("XLSB (data[5]): 0x"); Serial.println(data[5], HEX);
-    
-    // Druck-Register direkt lesen (0xF7-0xF9)
-    Wire.beginTransmission(BME280_ADDRESS);
-    Wire.write(0xF7);  // Druck MSB
-    Wire.endTransmission();
-    Wire.requestFrom(BME280_ADDRESS, 3);
-    data[0] = Wire.read();  // MSB
-    data[1] = Wire.read();  // LSB
-    data[2] = Wire.read();  // XLSB
-    
-    // Feuchtigkeits-Register direkt lesen (0xFD-0xFE)
-    Wire.beginTransmission(BME280_ADDRESS);
-    Wire.write(0xFD);  // Feuchtigkeit MSB
-    Wire.endTransmission();
-    Wire.requestFrom(BME280_ADDRESS, 2);
-    data[6] = Wire.read();  // MSB
-    data[7] = Wire.read();  // LSB
+    data[0] = Wire.read();
+    data[1] = Wire.read();
+    data[2] = Wire.read();
+    data[3] = Wire.read();
+    data[4] = Wire.read();
+    data[5] = Wire.read();
+    data[6] = Wire.read();
+    data[7] = Wire.read();
 }
 
 float BME280::readTemperature() {
@@ -217,94 +207,31 @@ float BME280::readPressure() {
 }
 
 float BME280::readHumidity() {
-    readTemperature();
+    readData();
     
-    Wire.beginTransmission(0x76);
-    Wire.write(0xFD);
-    Wire.endTransmission();
-    Wire.requestFrom(0x76, 2);
+    // Get raw humidity
+    int32_t adc_H = (data[6] << 8) | data[7];
     
-    int32_t adc_H = Wire.read();
-    adc_H <<= 8;
-    adc_H |= Wire.read();
-    
-    // Temperatur-Kompensation
+    // Calculate temperature compensation term
     int32_t v_x1_u32r = t_fine - ((int32_t)76800);
     
-    Serial.println("\nBME280 Humidity Formula Analysis:");
-    Serial.print("ADC_H: "); Serial.println(adc_H);
-    Serial.print("t_fine: "); Serial.println(t_fine);
-    Serial.print("v_x1_u32r: "); Serial.println(v_x1_u32r);
+    // Following the BME280 API reference implementation
+    int32_t v_x1 = (((((adc_H << 14) - (((int32_t)dig_H4) << 20) - 
+                      (((int32_t)dig_H5) * v_x1_u32r)) + ((int32_t)16384)) >> 15) * 
+                   (((((((v_x1_u32r * ((int32_t)dig_H6)) >> 10) * 
+                      (((v_x1_u32r * ((int32_t)dig_H3)) >> 11) + ((int32_t)32768))) >> 10) + 
+                      ((int32_t)2097152)) * ((int32_t)dig_H2) + 8192) >> 14));
     
-    Serial.println("\nCalibration values used:");
-    Serial.print("H1: "); Serial.println(dig_H1);
-    Serial.print("H2: "); Serial.println(dig_H2);
-    Serial.print("H3: "); Serial.println(dig_H3);
-    Serial.print("H4: "); Serial.println(dig_H4);
-    Serial.print("H5: "); Serial.println(dig_H5);
-    Serial.print("H6: "); Serial.println(dig_H6);
+    v_x1 = (v_x1 - (((((v_x1 >> 15) * (v_x1 >> 15)) >> 7) * ((int32_t)dig_H1)) >> 4));
     
-    // Erste Phase - Bit für Bit nach Datenblatt
-    int32_t v_x1 = adc_H << 14;
-    Serial.print("4a. ADC shifted: "); Serial.println(v_x1);
+    if (v_x1 < 0) {
+        v_x1 = 0;
+    }
+    if (v_x1 > 419430400) {
+        v_x1 = 419430400;
+    }
     
-    v_x1 -= ((int32_t)dig_H4) << 20;
-    Serial.print("4b. After H4: "); Serial.println(v_x1);
-    
-    v_x1 -= ((int32_t)dig_H5) * (t_fine - ((int32_t)76800));
-    Serial.print("4c. After H5: "); Serial.println(v_x1);
-    
-    v_x1 += ((int32_t)16384);
-    v_x1 >>= 15;
-    Serial.print("4d. First phase final: "); Serial.println(v_x1);
-    
-    // Zweite Phase - exakt nach Datenblatt Formel:
-    // ((((((v_x1_u32r * dig_H6) >> 10) * (((v_x1_u32r * dig_H3) >> 11) + 32768)) >> 10) + 2097152) * dig_H2 + 8192) >> 14
-    
-    int32_t v_x2 = v_x1_u32r * ((int32_t)dig_H6);
-    Serial.print("5a. v_x1_u32r * H6: "); Serial.println(v_x2);
-    
-    v_x2 >>= 10;
-    Serial.print("5b. After >>10: "); Serial.println(v_x2);
-    
-    int32_t v_x3 = v_x1_u32r * ((int32_t)dig_H3);
-    Serial.print("5c. v_x1_u32r * H3: "); Serial.println(v_x3);
-    
-    v_x3 >>= 11;
-    v_x3 += 32768;  // 2^15
-    Serial.print("5d. (>>11) + 32768: "); Serial.println(v_x3);
-    
-    v_x2 *= v_x3;
-    Serial.print("5e. v_x2 * v_x3: "); Serial.println(v_x2);
-    
-    v_x2 >>= 10;
-    v_x2 += 2097152;  // 2^21
-    Serial.print("5f. (>>10) + 2097152: "); Serial.println(v_x2);
-    
-    v_x2 += ((int32_t)dig_H2) + 8192;
-    Serial.print("5g. Add H2: "); Serial.println(v_x2);
-    
-    v_x2 >>= 14;
-    Serial.print("5h. Shift right: "); Serial.println(v_x2);
-    
-    v_x1 = (v_x1 * v_x2) >> 15;
-    Serial.print("6. Combined: "); Serial.println(v_x1);
-    
-    // H1 Kompensation
-    v_x1 = (v_x1 - (((((v_x1 >> 15) *                  // Schritt 11
-            (v_x1 >> 15)) >> 7) *
-            ((int32_t)dig_H1)) >> 4));
-    Serial.print("7. After H1: "); Serial.println(v_x1);
-    
-    // Begrenzung des Wertebereichs
-    v_x1 = (v_x1 < 0) ? 0 : v_x1;
-    v_x1 = (v_x1 > 419430400) ? 419430400 : v_x1;
-    
-    // Finale Konvertierung, Datenblatt: ">> 12" / 1024.0
-    float h = (float)(v_x1 >> 12) / 1024.0;
-    
-    Serial.print("8. Final humidity: "); Serial.println(h);
-    return h;
+    return ((float)v_x1) / 1024.0 / 1024.0 * 100.0;
 }
 
 // Neue Hilfsfunktion zum Lesen eines Registers
@@ -314,4 +241,5 @@ uint8_t BME280::readReg(uint8_t reg) {
     Wire.endTransmission();
     Wire.requestFrom(BME280_ADDRESS, 1);
     return Wire.read();
-} 
+}
+  
