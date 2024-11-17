@@ -73,26 +73,40 @@ void BME280::begin() {
         Serial.print("P2: "); Serial.println(dig_P2);
     }
     
-    // Humidity calibration - exakte Reihenfolge nach Datenblatt
+    // Humidity calibration mit Rohdaten-Debug
     Wire.beginTransmission(0x76);
-    Wire.write(0xA1);  // dig_H1
+    Wire.write(0xA1);
     Wire.endTransmission();
     Wire.requestFrom(0x76, 1);
-    dig_H1 = Wire.read();
-
+    uint8_t h1 = Wire.read();
+    
     Wire.beginTransmission(0x76);
-    Wire.write(0xE1);  // dig_H2 bis dig_H6
+    Wire.write(0xE1);
     Wire.endTransmission();
     Wire.requestFrom(0x76, 7);
+    
     if (Wire.available() >= 7) {
-        dig_H2 = (int16_t)(Wire.read() | (Wire.read() << 8));
-        dig_H3 = (uint8_t)Wire.read();
-        uint8_t reg = Wire.read();
-        uint8_t reg2 = Wire.read();
-        dig_H4 = (int16_t)((reg << 4) | (reg2 & 0x0F));
-        reg = Wire.read();
-        dig_H5 = (int16_t)((reg2 >> 4) | (reg << 4));
-        dig_H6 = (int8_t)Wire.read();
+        uint8_t raw[7];
+        for(int i=0; i<7; i++) {
+            raw[i] = Wire.read();
+        }
+        
+        Serial.println("\nRaw calibration bytes:");
+        for(int i=0; i<7; i++) {
+            Serial.print("0x");
+            if(raw[i] < 0x10) Serial.print("0");
+            Serial.print(raw[i], HEX);
+            Serial.print(" ");
+        }
+        Serial.println();
+        
+        // Zusammensetzen der Werte
+        dig_H1 = h1;
+        dig_H2 = (int16_t)(raw[1] << 8 | raw[0]);
+        dig_H3 = raw[2];
+        dig_H4 = (int16_t)((raw[3] << 4) | (raw[4] & 0x0F));
+        dig_H5 = (int16_t)((raw[4] >> 4) | (raw[5] << 4));
+        dig_H6 = (int8_t)raw[6];
 
         Serial.println("\nCalibration data:");
         Serial.print("H1: "); Serial.println(dig_H1);
