@@ -326,24 +326,34 @@ float BME280::readHumidity() {
     v_x1 >>= 15;
     Serial.print("4d. First phase final: "); Serial.println(v_x1);
     
-    // Zweite Phase - Temperatur Kompensation
+    // Zweite Phase - exakt nach Datenblatt Formel:
+    // ((((((v_x1_u32r * dig_H6) >> 10) * (((v_x1_u32r * dig_H3) >> 11) + 32768)) >> 10) + 2097152) * dig_H2 + 8192) >> 14
+    
     int32_t v_x2 = v_x1_u32r * ((int32_t)dig_H6);
-    Serial.print("5a. H6 comp: "); Serial.println(v_x2 >> 10);
+    Serial.print("5a. v_x1_u32r * H6: "); Serial.println(v_x2);
+    
+    v_x2 >>= 10;
+    Serial.print("5b. After >>10: "); Serial.println(v_x2);
     
     int32_t v_x3 = v_x1_u32r * ((int32_t)dig_H3);
-    Serial.print("5b. H3 comp: "); Serial.println(v_x3 >> 11);
+    Serial.print("5c. v_x1_u32r * H3: "); Serial.println(v_x3);
     
-    v_x2 += v_x3 + ((int32_t)32768);
-    Serial.print("5c. H2 comp: "); Serial.println(v_x2 >> 10);
+    v_x3 >>= 11;
+    v_x3 += 32768;  // 2^15
+    Serial.print("5d. (>>11) + 32768: "); Serial.println(v_x3);
     
-    v_x2 += ((int32_t)2097152);
-    Serial.print("5d. Add 2^20: "); Serial.println(v_x2);
+    v_x2 *= v_x3;
+    Serial.print("5e. v_x2 * v_x3: "); Serial.println(v_x2);
+    
+    v_x2 >>= 10;
+    v_x2 += 2097152;  // 2^21
+    Serial.print("5f. (>>10) + 2097152: "); Serial.println(v_x2);
     
     v_x2 += ((int32_t)dig_H2) + 8192;
-    Serial.print("5e. Add H2: "); Serial.println(v_x2);
+    Serial.print("5g. Add H2: "); Serial.println(v_x2);
     
     v_x2 >>= 14;
-    Serial.print("5f. Shift right: "); Serial.println(v_x2);
+    Serial.print("5h. Shift right: "); Serial.println(v_x2);
     
     v_x1 = (v_x1 * v_x2) >> 15;
     Serial.print("6. Combined: "); Serial.println(v_x1);
