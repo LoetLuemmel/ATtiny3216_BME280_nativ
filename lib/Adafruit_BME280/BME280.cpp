@@ -73,44 +73,67 @@ void BME280::begin() {
         Serial.print("P2: "); Serial.println(dig_P2);
     }
     
-    // Humidity Kalibrierung - exakt nach Datenblatt
+    // Humidity Kalibrierung - exakt nach Register-Map
+    Serial.println("\nReading BME280 humidity calibration data:");
+    
+    // H1 (0xA1)
     Wire.beginTransmission(0x76);
-    Wire.write(0xA1);  // H1 Register
+    Wire.write(0xA1);
     Wire.endTransmission();
     Wire.requestFrom(0x76, 1);
     dig_H1 = Wire.read();
-
+    
+    // H2 bis H6 (0xE1 bis 0xE7)
     Wire.beginTransmission(0x76);
-    Wire.write(0xE1);  // H2 bis H6 Register
+    Wire.write(0xE1);
     Wire.endTransmission();
     Wire.requestFrom(0x76, 7);
     
-    Serial.println("\nReading humidity calibration:");
-    Serial.print("Raw bytes: ");
-    
-    uint8_t data[7];
+    // Rohdaten speichern
+    uint8_t regs[7];
     for(int i=0; i<7; i++) {
-        data[i] = Wire.read();
-        Serial.print("0x"); 
-        Serial.print(data[i], HEX);
+        regs[i] = Wire.read();
+    }
+    
+    // Debug: Rohdaten anzeigen
+    Serial.print("Raw registers (0xE1-0xE7): ");
+    for(int i=0; i<7; i++) {
+        Serial.print("0x");
+        if(regs[i] < 0x10) Serial.print("0");
+        Serial.print(regs[i], HEX);
         Serial.print(" ");
     }
     Serial.println();
     
-    // Korrekte Zusammensetzung der Werte
-    dig_H2 = (int16_t)((data[1] << 8) | data[0]);
-    dig_H3 = data[2];
-    dig_H4 = (int16_t)((data[3] << 4) | (data[4] & 0xF));
-    dig_H5 = (int16_t)((data[4] >> 4) | (data[5] << 4));
-    dig_H6 = (int8_t)data[6];
+    // Kalibrierungswerte zusammensetzen
+    dig_H2 = (int16_t)(regs[1] << 8 | regs[0]);
+    dig_H3 = (uint8_t)regs[2];
     
-    Serial.println("Assembled calibration values:");
+    // H4 = 0xE4[7:0] + 0xE5[3:0] << 4
+    int16_t h4_msb = (int16_t)(regs[3] << 4);
+    int16_t h4_lsb = (int16_t)(regs[4] & 0x0F);
+    dig_H4 = h4_msb | h4_lsb;
+    
+    // H5 = 0xE5[7:4] + 0xE6[7:0] << 4
+    int16_t h5_msb = (int16_t)(regs[5] << 4);
+    int16_t h5_lsb = (int16_t)(regs[4] >> 4);
+    dig_H5 = h5_msb | h5_lsb;
+    
+    dig_H6 = (int8_t)regs[6];
+    
+    // Debug: Kalibrierungswerte anzeigen
+    Serial.println("\nCalibration values:");
     Serial.print("H1: "); Serial.println(dig_H1);
     Serial.print("H2: "); Serial.println(dig_H2);
     Serial.print("H3: "); Serial.println(dig_H3);
     Serial.print("H4: "); Serial.println(dig_H4);
     Serial.print("H5: "); Serial.println(dig_H5);
     Serial.print("H6: "); Serial.println(dig_H6);
+    
+    // Validierung der Werte
+    if(dig_H3 == 0) {
+        Serial.println("\nWARNING: H3 is zero - calibration may be incorrect!");
+    }
 }
 
 void BME280::writeReg(uint8_t reg, uint8_t value) {
