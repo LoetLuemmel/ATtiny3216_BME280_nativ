@@ -29,19 +29,12 @@ BME280::BME280() {
 }
 
 void BME280::begin() {
-    Wire.begin();
-    Wire.setClock(100000);
-    delay(100);
+    // Konfiguration des Sensors
+    writeReg(0xF2, 0x01);    // humidity oversampling x1
+    writeReg(0xF4, 0x27);    // temp/pressure oversampling x1, normal mode
+    delay(100);              // Warten auf stabile Messung
     
-    Serial.println("I2C initialized");
-    Serial.print("Attempting to read BME280 at address 0x");
-    Serial.println(BME280_ADDRESS, HEX);
-    
-    Wire.beginTransmission(BME280_ADDRESS);
-    Wire.write(0xD0);
-    byte error = Wire.endTransmission();
-    Serial.print("I2C error code: ");
-    Serial.println(error);
+    Serial.println("BME280 configured");
 }
 
 void BME280::writeReg(uint8_t reg, uint8_t value) {
@@ -86,23 +79,25 @@ void BME280::readData() {
 }
 
 float BME280::readTemperature() {
-    readData();
+    // Temperatur-Register direkt lesen
+    Wire.beginTransmission(0x76);
+    Wire.write(0xFA);  // Temperatur MSB
+    Wire.endTransmission();
     
-    int32_t adc_T = ((uint32_t)data[3] << 12) | ((uint32_t)data[4] << 4) | ((data[5] >> 4) & 0x0F);
-    
-    // Debug-Ausgabe für ADC-Wert
-    Serial.print("adc_T: "); Serial.println(adc_T);
-    
-    int32_t var1 = ((((adc_T >> 3) - ((int32_t)dig_T1 << 1))) * ((int32_t)dig_T2)) >> 11;
-    int32_t var2 = (((((adc_T >> 4) - ((int32_t)dig_T1)) * ((adc_T >> 4) - ((int32_t)dig_T1))) >> 12) * ((int32_t)dig_T3)) >> 14;
-    
-    // Debug-Ausgaben für Zwischenberechnungen
-    Serial.print("var1: "); Serial.println(var1);
-    Serial.print("var2: "); Serial.println(var2);
-    
-    t_fine = var1 + var2;
-    float T = (t_fine * 5 + 128) >> 8;
-    return T / 100;
+    Wire.requestFrom(0x76, 3);
+    if (Wire.available() >= 3) {
+        uint32_t msb = Wire.read();
+        uint32_t lsb = Wire.read();
+        uint32_t xlsb = Wire.read();
+        
+        uint32_t adc_T = (msb << 12) | (lsb << 4) | (xlsb >> 4);
+        
+        Serial.print("Raw temp: 0x");
+        Serial.println(adc_T, HEX);
+        
+        return adc_T / 100.0; // Vorläufig zur Überprüfung der Rohdaten
+    }
+    return 0;
 }
 
 float BME280::readPressure() {
