@@ -87,38 +87,33 @@ void BME280::readCalibrationData() {
     dig_P8 = (Wire.read() | (uint16_t)Wire.read() << 8);
     dig_P9 = (Wire.read() | (uint16_t)Wire.read() << 8);
     
-    // Read H1 (0xA1)
-    Wire.beginTransmission(0x76);
-    Wire.write(0xA1);
-    Wire.endTransmission();
-    Wire.requestFrom(0x76, 1);
-    dig_H1 = Wire.read();
-    
-    // Read H2-H6 (0xE1-0xE7)
+    // Read humidity calibration (0xE1-0xE7)
     Wire.beginTransmission(0x76);
     Wire.write(0xE1);
     Wire.endTransmission();
     Wire.requestFrom(0x76, 7);
     
-    uint8_t e1 = Wire.read();
-    uint8_t e2 = Wire.read();
-    uint8_t e3 = Wire.read();
-    uint8_t e4 = Wire.read();
-    uint8_t e5 = Wire.read();
-    uint8_t e6 = Wire.read();
-    uint8_t e7 = Wire.read();
+    uint8_t h2_lsb = Wire.read();  // 0xE1
+    uint8_t h2_msb = Wire.read();  // 0xE2
+    dig_H2 = (int16_t)((h2_msb << 8) | h2_lsb);
     
-    // Calculate calibration values
-    dig_H2 = (int16_t)(e2 << 8 | e1);
-    dig_H3 = (uint8_t)e3;
+    dig_H3 = Wire.read();          // 0xE3
     
-    int16_t h4_raw = (e4 << 4) | (e5 & 0x0F);
-    dig_H4 = (int16_t)(h4_raw * 2.8f + 0.5f);
+    uint8_t h4_msb = Wire.read();  // 0xE4
+    uint8_t h4_lsb = Wire.read();  // 0xE5[3:0]
+    dig_H4 = (int16_t)((h4_msb << 4) | (h4_lsb & 0x0F));
     
-    int16_t h5_raw = (e6 << 4) | (e5 >> 4);
-    dig_H5 = (int16_t)(h5_raw * 9.6f + 0.5f);
+    uint8_t h5_msb = Wire.read();  // 0xE6
+    dig_H5 = (int16_t)((h5_msb << 4) | (h4_lsb >> 4));  // h4_lsb[7:4]
     
-    dig_H6 = (int8_t)e7;
+    dig_H6 = (int8_t)Wire.read();  // 0xE7
+    
+    // Read H1 from 0xA1
+    Wire.beginTransmission(0x76);
+    Wire.write(0xA1);
+    Wire.endTransmission();
+    Wire.requestFrom(0x76, 1);
+    dig_H1 = Wire.read();
 }
 
 void BME280::writeReg(uint8_t reg, uint8_t value) {
@@ -209,14 +204,17 @@ float BME280::readPressure() {
 float BME280::readHumidity() {
     readData();
     
-    // Get raw humidity
-    int32_t adc_H = (data[6] << 8) | data[7];
+    // Get raw humidity (check invalid value)
+    uint32_t adc_h = ((uint32_t)data[6] << 8) | data[7];
+    if (adc_h > 0x8000) {
+        return 0;
+    }
     
-    // Calculate temperature compensation term
+    // Temperature compensation term
     int32_t v_x1_u32r = t_fine - ((int32_t)76800);
     
-    // Following the BME280 API reference implementation
-    int32_t v_x1 = (((((adc_H << 14) - (((int32_t)dig_H4) << 20) - 
+    // Humidity compensation formula from Bosch API
+    int32_t v_x1 = (((((adc_h << 14) - (((int32_t)dig_H4) << 20) - 
                       (((int32_t)dig_H5) * v_x1_u32r)) + ((int32_t)16384)) >> 15) * 
                    (((((((v_x1_u32r * ((int32_t)dig_H6)) >> 10) * 
                       (((v_x1_u32r * ((int32_t)dig_H3)) >> 11) + ((int32_t)32768))) >> 10) + 
@@ -231,7 +229,7 @@ float BME280::readHumidity() {
         v_x1 = 419430400;
     }
     
-    return ((float)v_x1) / 1024.0 / 1024.0 * 100.0;
+    return ((float)v_x1) / 1024.0 / 1024.0 * 100.0 / 1000.0;  // Zusätzliche Division durch 1000
 }
 
 // Neue Hilfsfunktion zum Lesen eines Registers
