@@ -9,47 +9,24 @@ BME280 bme;
 
 void setup() {
     Serial.begin(9600);
-    while (!Serial);
-    Serial.println(F("BME280 test"));
-
-    // I2C Initialisierung mit Debug
-    Wire.swap(1);
-    Wire.begin();
-    Wire.setClock(100000);
+    delay(1000);
+    Serial.println("Start");
+    
+    Serial.println("Init I2C...");
+    Wire.begin();  // Standard I2C ohne swap
+    Wire.setClock(100000);  // Standard 100kHz
     delay(100);
-
-    // Test der I2C Kommunikation
-    Serial.println("Testing I2C communication...");
     
-    Wire.beginTransmission(0x76);
-    byte error = Wire.endTransmission();
+    // Nur die valide Adresse testen
+    Serial.println("Testing BME280 at 0x76...");
+    byte available = Wire.requestFrom(0x76, 1);
+    Serial.print("Response: ");
+    Serial.println(available);
     
-    Serial.print("Basic I2C test error code: ");
-    Serial.println(error);
-    
-    if (error == 0) {
-        Serial.println("I2C device responded!");
-    } else {
-        Serial.println("No I2C device response");
-    }
-    
-    delay(100);
-    bme.begin();
+    Serial.println("Setup complete");
 }
 
 void loop() {
-    Serial.print("Temperature = ");
-    Serial.print(bme.readTemperature());
-    Serial.println(" *C");
-
-    Serial.print("Pressure = ");
-    Serial.print(bme.readPressure());
-    Serial.println(" hPa");
-
-    Serial.print("Humidity = ");
-    Serial.print(bme.readHumidity());
-    Serial.println(" %");
-
-    Serial.println();
-    delay(2000);
+    delay(1000);
+    Serial.println("Loop");
 }
