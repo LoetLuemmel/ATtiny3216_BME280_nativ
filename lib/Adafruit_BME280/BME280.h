@@ -39,6 +39,7 @@ class BME280 {
         int16_t  dig_H5;
         int8_t   dig_H6;
         uint8_t  data[8];
+        void readCalibrationData();
 };
 
 #endif 

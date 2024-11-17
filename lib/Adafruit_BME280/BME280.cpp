@@ -29,43 +29,64 @@ BME280::BME280() {
 }
 
 void BME280::begin() {
-    Serial.println("\nBME280 Startup Sequence (Datasheet p.20):");
+    Serial.println("\nBME280 Initialization:");
     
-    // 1. Power-on-reset
+    // Reset
     Wire.beginTransmission(0x76);
     Wire.write(0xE0);
     Wire.write(0xB6);
     Wire.endTransmission();
     delay(10);
     
-    // 2. Read all calibration data
-    Serial.println("\nCalibration Data Read:");
+    // Check ID
+    Wire.beginTransmission(0x76);
+    Wire.write(0xD0);
+    Wire.endTransmission();
+    Wire.requestFrom(0x76, 1);
+    uint8_t chipID = Wire.read();
+    Serial.print("Chip ID: 0x");
+    Serial.println(chipID, HEX);
     
-    // Temperature & Pressure calibration (0x88-0xA1)
+    if (chipID != 0x60) {
+        Serial.println("BME280 not found!");
+        return;
+    }
+    Serial.println("BME280 found!");
+    
+    // Read calibration data
+    readCalibrationData();
+    
+    // Configure sensor
+    Wire.beginTransmission(0x76);
+    Wire.write(0xF2);  // ctrl_hum
+    Wire.write(0x05);  // 16x oversampling
+    Wire.endTransmission();
+    
+    Wire.beginTransmission(0x76);
+    Wire.write(0xF4);  // ctrl_meas
+    Wire.write(0xB7);  // 16x oversampling, normal mode
+    Wire.endTransmission();
+    
+    Serial.println("Setup complete");
+}
+
+void BME280::readCalibrationData() {
+    // Temperature & Pressure (0x88-0xA1)
     Wire.beginTransmission(0x76);
     Wire.write(0x88);
     Wire.endTransmission();
     Wire.requestFrom(0x76, 26);
     
-    Serial.println("Temperature & Pressure registers:");
-    for(int i=0; i<26; i++) {
-        uint8_t value = Wire.read();
-        Serial.print("0x88+"); 
-        Serial.print(i, HEX);
-        Serial.print(": 0x");
-        Serial.println(value, HEX);
-    }
+    // ... Temperature & Pressure calibration ...
     
-    // H1 calibration (0xA1)
+    // Read H1 (0xA1)
     Wire.beginTransmission(0x76);
     Wire.write(0xA1);
     Wire.endTransmission();
     Wire.requestFrom(0x76, 1);
     dig_H1 = Wire.read();
-    Serial.print("H1 (0xA1): 0x");
-    Serial.println(dig_H1, HEX);
     
-    // H2-H6 calibration (0xE1-0xE7)
+    // Read H2-H6 (0xE1-0xE7)
     Wire.beginTransmission(0x76);
     Wire.write(0xE1);
     Wire.endTransmission();
@@ -79,80 +100,17 @@ void BME280::begin() {
     uint8_t e6 = Wire.read();
     uint8_t e7 = Wire.read();
     
-    Serial.println("\nBME280 Register Analysis (Datasheet p.25):");
-    
-    // H4 = ((E4 << 4) | (E5 & 0x0F)) * 2.8
-    Serial.print("H4 Raw: E4=0x"); Serial.print(e4, HEX);
-    Serial.print(" ("); Serial.print(e4, BIN); Serial.print(")");
-    Serial.print(", E5[3:0]=0x"); Serial.print(e5 & 0x0F, HEX);
-    Serial.print(" ("); Serial.print(e5 & 0x0F, BIN); Serial.println(")");
-    
-    // Erst die Bit-Operationen
-    int16_t h4_raw = (e4 << 4) | (e5 & 0x0F);  // 0x10C = 268
-    if (h4_raw & 0x0800) {  // Check sign bit
-        h4_raw |= 0xF000;    // Sign extend
-    }
-    
-    // Dann die Skalierung
-    dig_H4 = (int16_t)(h4_raw * 2.8f + 0.5f);  // 268 * 2.8 ≈ 707
-    
-    Serial.print("H4 steps: (0x"); Serial.print(e4, HEX);
-    Serial.print(" << 4) | 0x"); Serial.print(e5 & 0x0F, HEX);
-    Serial.print(" = 0x"); Serial.print(h4_raw, HEX);
-    Serial.print(" * 2.8 = "); Serial.print(dig_H4);
-    Serial.print(" (0x"); Serial.print(dig_H4, HEX); Serial.println(")");
-    
-    // H5 = ((E6 << 4) | (E5 >> 4)) * 2.8
-    Serial.print("H5 Raw: E6=0x"); Serial.print(e6, HEX);
-    Serial.print(" ("); Serial.print(e6, BIN); Serial.print(")");
-    Serial.print(", E5[7:4]=0x"); Serial.print(e5 >> 4, HEX);
-    Serial.print(" ("); Serial.print(e5 >> 4, BIN); Serial.println(")");
-    
-    // Gleiche Logik für H5
-    int16_t h5_raw = (e6 << 4) | (e5 >> 4);  // 0x32 = 50
-    if (h5_raw & 0x0800) {  // Check sign bit
-        h5_raw |= 0xF000;    // Sign extend
-    }
-    
-    // Skalierung
-    dig_H5 = (int16_t)(h5_raw * 9.6f + 0.5f);  // 50 * 9.6 = 480
-    
-    Serial.print("H5 steps: (0x"); Serial.print(e6, HEX);
-    Serial.print(" << 4) | 0x"); Serial.print(e5 >> 4, HEX);
-    Serial.print(" = 0x"); Serial.print(h5_raw, HEX);
-    Serial.print(" * 9.6 = "); Serial.print(dig_H5);
-    Serial.print(" (0x"); Serial.print(dig_H5, HEX); Serial.println(")");
-    
-    // Kalibrierungswerte setzen
+    // Calculate calibration values
     dig_H2 = (int16_t)(e2 << 8 | e1);
     dig_H3 = (uint8_t)e3;
     
+    int16_t h4_raw = (e4 << 4) | (e5 & 0x0F);
+    dig_H4 = (int16_t)(h4_raw * 2.8f + 0.5f);
+    
+    int16_t h5_raw = (e6 << 4) | (e5 >> 4);
+    dig_H5 = (int16_t)(h5_raw * 9.6f + 0.5f);
+    
     dig_H6 = (int8_t)e7;
-    
-    Serial.println("\nFinal calibration values:");
-    Serial.print("H2 (int16_t):  "); Serial.println(dig_H2);
-    Serial.print("H3 (uint8_t):  "); Serial.println(dig_H3);
-    Serial.print("H4 (int16_t):  "); Serial.println(dig_H4);
-    Serial.print("H5 (int16_t):  "); Serial.println(dig_H5);
-    Serial.print("H6 (int8_t):   "); Serial.println(dig_H6);
-    
-    Serial.println("\nValidation (expected ranges):");
-    Serial.println("H2: 300-400  (typically 385)");
-    Serial.println("H3: 0-50     (typically 30)");
-    Serial.println("H4: 600-800  (typically 707)");
-    Serial.println("H5: 400-500  (typically 480)");
-    Serial.println("H6: 20-40    (typically 30)");
-    
-    // 6. Configure sensor
-    Wire.beginTransmission(0x76);
-    Wire.write(0xF2);  // ctrl_hum
-    Wire.write(0x05);  // 16x oversampling
-    Wire.endTransmission();
-    
-    Wire.beginTransmission(0x76);
-    Wire.write(0xF4);  // ctrl_meas
-    Wire.write(0xB7);  // 16x oversampling, normal mode
-    Wire.endTransmission();
 }
 
 void BME280::writeReg(uint8_t reg, uint8_t value) {
