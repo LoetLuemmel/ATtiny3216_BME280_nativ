@@ -50,6 +50,76 @@ void BME280::begin() {
     writeReg(0xF2, 0x01);    // humidity oversampling x1
     writeReg(0xF4, 0x27);    // temp/pressure oversampling x1, normal mode
     delay(100);
+    
+    // Druck-Kalibrierungsdaten lesen
+    Wire.beginTransmission(0x76);
+    Wire.write(0x8E);  // Start der Druck-Kalibrierungsdaten
+    Wire.endTransmission();
+    
+    Wire.requestFrom(0x76, 18);  // 9 Werte × 2 Bytes
+    if (Wire.available() >= 18) {
+        dig_P1 = Wire.read() | (Wire.read() << 8);
+        dig_P2 = Wire.read() | (Wire.read() << 8);
+        dig_P3 = Wire.read() | (Wire.read() << 8);
+        dig_P4 = Wire.read() | (Wire.read() << 8);
+        dig_P5 = Wire.read() | (Wire.read() << 8);
+        dig_P6 = Wire.read() | (Wire.read() << 8);
+        dig_P7 = Wire.read() | (Wire.read() << 8);
+        dig_P8 = Wire.read() | (Wire.read() << 8);
+        dig_P9 = Wire.read() | (Wire.read() << 8);
+        
+        Serial.println("Pressure calibration data:");
+        Serial.print("P1: "); Serial.println(dig_P1);
+        Serial.print("P2: "); Serial.println(dig_P2);
+    }
+    
+    // Feuchtigkeits-Kalibrierungsdaten mit Debug
+    Wire.beginTransmission(0x76);
+    Wire.write(0xA1);
+    Wire.endTransmission();
+    Wire.requestFrom(0x76, 1);
+    dig_H1 = Wire.read();
+    
+    Wire.beginTransmission(0x76);
+    Wire.write(0xE1);
+    Wire.endTransmission();
+    Wire.requestFrom(0x76, 7);
+    
+    if (Wire.available() >= 7) {
+        uint8_t e1 = Wire.read();
+        uint8_t e2 = Wire.read();
+        uint8_t e3 = Wire.read();
+        uint8_t e4 = Wire.read();
+        uint8_t e5 = Wire.read();
+        uint8_t e6 = Wire.read();
+        uint8_t e7 = Wire.read();
+        
+        dig_H2 = (e2 << 8) | e1;
+        dig_H3 = e3;
+        dig_H4 = (e4 << 4) | (e5 & 0x0F);
+        dig_H5 = (e6 << 4) | (e5 >> 4);
+        dig_H6 = (int8_t)e7;
+        
+        Serial.println("\nHumidity calibration raw data:");
+        Serial.print("E1-E7: ");
+        Serial.print(e1, HEX); Serial.print(" ");
+        Serial.print(e2, HEX); Serial.print(" ");
+        Serial.print(e3, HEX); Serial.print(" ");
+        Serial.print(e4, HEX); Serial.print(" ");
+        Serial.print(e5, HEX); Serial.print(" ");
+        Serial.print(e6, HEX); Serial.print(" ");
+        Serial.println(e7, HEX);
+        
+        Serial.println("\nHumidity calibration values:");
+        Serial.print("H1: "); Serial.println(dig_H1);
+        Serial.print("H2: "); Serial.println(dig_H2);
+        Serial.print("H3: "); Serial.println(dig_H3);
+        Serial.print("H4: "); Serial.println(dig_H4);
+        Serial.print("H5: "); Serial.println(dig_H5);
+        Serial.print("H6: "); Serial.println(dig_H6);
+    } else {
+        Serial.println("Failed to read humidity calibration!");
+    }
 }
 
 void BME280::writeReg(uint8_t reg, uint8_t value) {
@@ -119,7 +189,6 @@ float BME280::readTemperature() {
 }
 
 float BME280::readPressure() {
-    // Druckregister lesen (0xF7-0xF9)
     Wire.beginTransmission(0x76);
     Wire.write(0xF7);
     Wire.endTransmission();
@@ -132,30 +201,58 @@ float BME280::readPressure() {
         
         int32_t adc_P = (msb << 12) | (lsb << 4) | (xlsb >> 4);
         
-        Serial.print("Raw pressure: 0x");
-        Serial.println(adc_P, HEX);
+        // Druckberechnung mit Kalibrierung
+        int64_t var1, var2, p;
+        var1 = ((int64_t)t_fine) - 128000;
+        var2 = var1 * var1 * (int64_t)dig_P6;
+        var2 = var2 + ((var1 * (int64_t)dig_P5) << 17);
+        var2 = var2 + (((int64_t)dig_P4) << 35);
+        var1 = ((var1 * var1 * (int64_t)dig_P3) >> 8) + ((var1 * (int64_t)dig_P2) << 12);
+        var1 = (((((int64_t)1) << 47) + var1)) * ((int64_t)dig_P1) >> 33;
         
-        // Vorläufig zur Überprüfung der Rohdaten
-        return adc_P / 100.0;
+        if (var1 == 0) {
+            return 0; // Vermeidung von Division durch 0
+        }
+        
+        p = 1048576 - adc_P;
+        p = (((p << 31) - var2) * 3125) / var1;
+        var1 = (((int64_t)dig_P9) * (p >> 13) * (p >> 13)) >> 25;
+        var2 = (((int64_t)dig_P8) * p) >> 19;
+        p = ((p + var1 + var2) >> 8) + (((int64_t)dig_P7) << 4);
+        
+        return (float)p / 256.0 / 100.0; // Umrechnung in hPa
     }
     return 0;
 }
 
 float BME280::readHumidity() {
-    readData();
+    // Erst Temperatur lesen für t_fine
+    readTemperature();
     
-    int32_t adc_H = ((uint32_t)data[6] << 8) | data[7];
+    Wire.beginTransmission(0x76);
+    Wire.write(0xFD);
+    Wire.endTransmission();
     
-    int32_t v_x1_u32r = (t_fine - ((int32_t)76800));
-    v_x1_u32r = (((((adc_H << 14) - (((int32_t)dig_H4) << 20) - (((int32_t)dig_H5) * v_x1_u32r)) +
-                   ((int32_t)16384)) >> 15) * (((((((v_x1_u32r * ((int32_t)dig_H6)) >> 10) * (((v_x1_u32r *
-                   ((int32_t)dig_H3)) >> 11) + ((int32_t)32768))) >> 10) + ((int32_t)2097152)) *
-                   ((int32_t)dig_H2) + 8192) >> 14));
-    v_x1_u32r = (v_x1_u32r - (((((v_x1_u32r >> 15) * (v_x1_u32r >> 15)) >> 7) * ((int32_t)dig_H1)) >> 4));
-    v_x1_u32r = (v_x1_u32r < 0) ? 0 : v_x1_u32r;
-    v_x1_u32r = (v_x1_u32r > 419430400) ? 419430400 : v_x1_u32r;
-    
-    return (float)(v_x1_u32r >> 12) / 1024.0;
+    Wire.requestFrom(0x76, 2);
+    if (Wire.available() >= 2) {
+        uint16_t adc_H = Wire.read() << 8 | Wire.read();
+        
+        Serial.print("Raw humidity: 0x");
+        Serial.println(adc_H, HEX);
+        
+        int32_t v_x1_u32r;
+        v_x1_u32r = (t_fine - ((int32_t)76800));
+        v_x1_u32r = (((((adc_H << 14) - (((int32_t)dig_H4) << 20) - (((int32_t)dig_H5) * v_x1_u32r)) +
+                    ((int32_t)16384)) >> 15) * (((((((v_x1_u32r * ((int32_t)dig_H6)) >> 10) * (((v_x1_u32r *
+                    ((int32_t)dig_H3)) >> 11) + ((int32_t)32768))) >> 10) + ((int32_t)2097152)) *
+                    ((int32_t)dig_H2) + 8192) >> 14));
+        v_x1_u32r = (v_x1_u32r - (((((v_x1_u32r >> 15) * (v_x1_u32r >> 15)) >> 7) * ((int32_t)dig_H1)) >> 4));
+        v_x1_u32r = (v_x1_u32r < 0) ? 0 : v_x1_u32r;
+        v_x1_u32r = (v_x1_u32r > 419430400) ? 419430400 : v_x1_u32r;
+        
+        return (float)(v_x1_u32r >> 12) / 1024.0;
+    }
+    return 0;
 }
 
 // Neue Hilfsfunktion zum Lesen eines Registers
