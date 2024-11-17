@@ -13,6 +13,7 @@ class BME280 {
         float readHumidity();
     private:
         void writeReg(uint8_t reg, uint8_t value);
+        uint8_t readReg(uint8_t reg);
         void readData();
         int32_t t_fine;
         uint16_t dig_T1;
