@@ -29,70 +29,23 @@ BME280::BME280() {
 }
 
 void BME280::begin() {
-    // Sensor aus dem Sleep-Mode holen
-    writeReg(0xF4, 0x00);  // Sleep mode
-    delay(50);  // Warten auf Reset
-    
-    // Lese Kalibrierungsdaten
-    Wire.beginTransmission(BME280_ADDRESS);
-    Wire.write(0x88);  // Start der Kalibrierungsdaten
+    // Chip ID aus Register 0xD0 lesen
+    Wire.beginTransmission(0x76);
+    Wire.write(0xD0);
     Wire.endTransmission();
-    Wire.requestFrom(BME280_ADDRESS, 26);
     
-    dig_T1 = (Wire.read() | (uint16_t)Wire.read() << 8);
-    dig_T2 = (Wire.read() | (uint16_t)Wire.read() << 8);
-    dig_T3 = (Wire.read() | (uint16_t)Wire.read() << 8);
-    
-    // Debug-Ausgaben für Temperatur-Kalibrierung
-    Serial.println("Temperature calibration data:");
-    Serial.print("dig_T1: "); Serial.println(dig_T1);
-    Serial.print("dig_T2: "); Serial.println(dig_T2);
-    Serial.print("dig_T3: "); Serial.println(dig_T3);
-    
-    dig_P1 = (Wire.read() | (uint16_t)Wire.read() << 8);
-    dig_P2 = (Wire.read() | (uint16_t)Wire.read() << 8);
-    dig_P3 = (Wire.read() | (uint16_t)Wire.read() << 8);
-    dig_P4 = (Wire.read() | (uint16_t)Wire.read() << 8);
-    dig_P5 = (Wire.read() | (uint16_t)Wire.read() << 8);
-    dig_P6 = (Wire.read() | (uint16_t)Wire.read() << 8);
-    dig_P7 = (Wire.read() | (uint16_t)Wire.read() << 8);
-    dig_P8 = (Wire.read() | (uint16_t)Wire.read() << 8);
-    dig_P9 = (Wire.read() | (uint16_t)Wire.read() << 8);
-    
-    Wire.beginTransmission(BME280_ADDRESS);
-    Wire.write(0xA1);  // dig_H1
-    Wire.endTransmission();
-    Wire.requestFrom(BME280_ADDRESS, 1);
-    dig_H1 = Wire.read();
-    
-    Wire.beginTransmission(BME280_ADDRESS);
-    Wire.write(0xE1);  // dig_H2 bis dig_H6
-    Wire.endTransmission();
-    Wire.requestFrom(BME280_ADDRESS, 7);
-    dig_H2 = (Wire.read() | (uint16_t)Wire.read() << 8);
-    dig_H3 = Wire.read();
-    dig_H4 = ((int8_t)Wire.read() << 4) | (Wire.read() & 0xF);
-    dig_H5 = ((int8_t)Wire.read() << 4) | (Wire.read() >> 4);
-    dig_H6 = (int8_t)Wire.read();
-
-    // Debug-Ausgaben für Rohdaten
-    readData();
-    Serial.println("Raw sensor data:");
-    for(int i = 0; i < 8; i++) {
-        Serial.print("data["); Serial.print(i); Serial.print("]: ");
-        Serial.println(data[i], HEX);
+    Wire.requestFrom(0x76, 1);
+    if (Wire.available()) {
+        uint8_t chipId = Wire.read();
+        Serial.print("BME280 Chip ID: 0x");
+        Serial.println(chipId, HEX);
+    } else {
+        Serial.println("Could not read chip ID!");
     }
-
-    // Sensor-Konfiguration
-    writeReg(0xF2, 0x01);  // humidity oversampling x1
-    delay(50);  // Warten auf Konfiguration
-    writeReg(0xF4, 0x27);  // temp/pressure oversampling x1, normal mode
-    delay(50);  // Warten auf Moduswechsel
     
-    // Debug: Konfiguration überprüfen
-    Serial.println("Sensor configuration:");
-    uint8_t config = readReg(0xF4);
-    Serial.print("Control register (0xF4): 0x"); Serial.println(config, HEX);
+    // Rest der Initialisierung
+    writeReg(0xF2, 0x01);  // humidity oversampling x1
+    writeReg(0xF4, 0x27);  // temp/pressure oversampling x1, normal mode
 }
 
 void BME280::writeReg(uint8_t reg, uint8_t value) {
