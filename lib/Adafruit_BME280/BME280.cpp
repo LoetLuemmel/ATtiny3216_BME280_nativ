@@ -73,52 +73,34 @@ void BME280::begin() {
         Serial.print("P2: "); Serial.println(dig_P2);
     }
     
-    // Feuchtigkeits-Kalibrierungsdaten mit Debug
+    // Humidity calibration - exakte Reihenfolge nach Datenblatt
     Wire.beginTransmission(0x76);
-    Wire.write(0xA1);
+    Wire.write(0xA1);  // dig_H1
     Wire.endTransmission();
     Wire.requestFrom(0x76, 1);
     dig_H1 = Wire.read();
-    
+
     Wire.beginTransmission(0x76);
-    Wire.write(0xE1);
+    Wire.write(0xE1);  // dig_H2 bis dig_H6
     Wire.endTransmission();
     Wire.requestFrom(0x76, 7);
-    
     if (Wire.available() >= 7) {
-        uint8_t e1 = Wire.read();
-        uint8_t e2 = Wire.read();
-        uint8_t e3 = Wire.read();
-        uint8_t e4 = Wire.read();
-        uint8_t e5 = Wire.read();
-        uint8_t e6 = Wire.read();
-        uint8_t e7 = Wire.read();
-        
-        dig_H2 = (e2 << 8) | e1;
-        dig_H3 = e3;
-        dig_H4 = (e4 << 4) | (e5 & 0x0F);
-        dig_H5 = (e6 << 4) | (e5 >> 4);
-        dig_H6 = (int8_t)e7;
-        
-        Serial.println("\nHumidity calibration raw data:");
-        Serial.print("E1-E7: ");
-        Serial.print(e1, HEX); Serial.print(" ");
-        Serial.print(e2, HEX); Serial.print(" ");
-        Serial.print(e3, HEX); Serial.print(" ");
-        Serial.print(e4, HEX); Serial.print(" ");
-        Serial.print(e5, HEX); Serial.print(" ");
-        Serial.print(e6, HEX); Serial.print(" ");
-        Serial.println(e7, HEX);
-        
-        Serial.println("\nHumidity calibration values:");
+        dig_H2 = (int16_t)(Wire.read() | (Wire.read() << 8));
+        dig_H3 = (uint8_t)Wire.read();
+        uint8_t reg = Wire.read();
+        uint8_t reg2 = Wire.read();
+        dig_H4 = (int16_t)((reg << 4) | (reg2 & 0x0F));
+        reg = Wire.read();
+        dig_H5 = (int16_t)((reg2 >> 4) | (reg << 4));
+        dig_H6 = (int8_t)Wire.read();
+
+        Serial.println("\nCalibration data:");
         Serial.print("H1: "); Serial.println(dig_H1);
         Serial.print("H2: "); Serial.println(dig_H2);
         Serial.print("H3: "); Serial.println(dig_H3);
         Serial.print("H4: "); Serial.println(dig_H4);
         Serial.print("H5: "); Serial.println(dig_H5);
         Serial.print("H6: "); Serial.println(dig_H6);
-    } else {
-        Serial.println("Failed to read humidity calibration!");
     }
 }
 
