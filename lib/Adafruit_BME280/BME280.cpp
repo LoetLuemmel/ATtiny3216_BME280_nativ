@@ -226,8 +226,7 @@ float BME280::readPressure() {
 }
 
 float BME280::readHumidity() {
-    // Erst Temperatur lesen für t_fine
-    readTemperature();
+    readTemperature();  // Update t_fine
     
     Wire.beginTransmission(0x76);
     Wire.write(0xFD);
@@ -242,24 +241,24 @@ float BME280::readHumidity() {
         Serial.print("t_fine: ");
         Serial.println(t_fine);
         
-        // Vereinfachte Berechnung zum Testen
-        int32_t v_x1 = t_fine - 76800;
-        int32_t v_x2 = adc_H * 16384;
-        int32_t v_x3 = dig_H4 * 1048576;
-        int32_t v_x4 = dig_H5 * v_x1;
-        int32_t v_x5 = (v_x2 - v_x3 - v_x4 + 16384) >> 15;
+        // Originale Formel aus dem Datenblatt
+        int32_t v_x1_u32r = t_fine - ((int32_t)76800);
+        Serial.print("v_x1_u32r: "); Serial.println(v_x1_u32r);
         
-        Serial.println("Calculation steps:");
-        Serial.print("v_x1: "); Serial.println(v_x1);
-        Serial.print("v_x2: "); Serial.println(v_x2);
-        Serial.print("v_x3: "); Serial.println(v_x3);
-        Serial.print("v_x4: "); Serial.println(v_x4);
-        Serial.print("v_x5: "); Serial.println(v_x5);
+        v_x1_u32r = (((((adc_H << 14) - (((int32_t)dig_H4) << 20) - (((int32_t)dig_H5) * v_x1_u32r)) + 
+                   ((int32_t)16384)) >> 15) * (((((((v_x1_u32r * ((int32_t)dig_H6)) >> 10) * 
+                   (((v_x1_u32r * ((int32_t)dig_H3)) >> 11) + ((int32_t)32768))) >> 10) + 
+                   ((int32_t)2097152)) * ((int32_t)dig_H2) + 8192) >> 14));
         
-        int32_t humidity = (v_x5 * dig_H2) >> 10;
-        humidity = constrain(humidity, 0, 102400);
+        v_x1_u32r = (v_x1_u32r - (((((v_x1_u32r >> 15) * (v_x1_u32r >> 15)) >> 7) * 
+                   ((int32_t)dig_H1)) >> 4));
         
-        return (float)humidity / 1024.0;
+        Serial.print("Final v_x1_u32r: "); Serial.println(v_x1_u32r);
+        
+        v_x1_u32r = (v_x1_u32r < 0) ? 0 : v_x1_u32r;
+        v_x1_u32r = (v_x1_u32r > 419430400) ? 419430400 : v_x1_u32r;
+        
+        return (float)(v_x1_u32r >> 12) / 1024.0;
     }
     return 0;
 }
