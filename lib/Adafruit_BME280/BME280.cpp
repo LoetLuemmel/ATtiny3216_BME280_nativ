@@ -222,7 +222,7 @@ float BME280::readPressure() {
 }
 
 float BME280::readHumidity() {
-    readTemperature();  // Update t_fine
+    readTemperature();
     
     Wire.beginTransmission(0x76);
     Wire.write(0xFD);
@@ -230,33 +230,40 @@ float BME280::readHumidity() {
     
     Wire.requestFrom(0x76, 2);
     if (Wire.available() >= 2) {
-        int32_t adc_H = Wire.read() << 8 | Wire.read();
+        int32_t adc_H = (uint32_t)(Wire.read()) << 8;
+        adc_H |= (uint32_t)(Wire.read());
         
-        Serial.println("\nHumidity calculation steps:");
-        Serial.print("adc_H raw: "); Serial.println(adc_H);
-        Serial.print("t_fine: "); Serial.println(t_fine);
+        Serial.println("\nHumidity calculation (complete):");
+        Serial.print("ADC_H: "); Serial.println(adc_H);
         
-        // Schritt 1: Temperaturkompensation
-        int32_t v_x1 = t_fine - ((int32_t)76800);
-        Serial.print("v_x1: "); Serial.println(v_x1);
+        // Temperaturkompensation
+        int32_t v_x1 = (int32_t)t_fine - ((int32_t)76800);
         
-        // Schritt 2: Erste Berechnung mit H4 und H5
-        int32_t v_x2 = adc_H << 14;
-        int32_t v_x3 = ((int32_t)dig_H4) << 20;
-        int32_t v_x4 = ((int32_t)dig_H5) * v_x1;
-        Serial.print("v_x2 (adc_H<<14): "); Serial.println(v_x2);
-        Serial.print("v_x3 (H4<<20): "); Serial.println(v_x3);
-        Serial.print("v_x4 (H5*v_x1): "); Serial.println(v_x4);
+        // Erste Phase der Berechnung
+        int32_t term1 = adc_H << 14;
+        int32_t term2 = ((int32_t)dig_H4) << 20;
+        int32_t term3 = ((int32_t)dig_H5) * v_x1;
+        int32_t v_x2 = (((term1 - term2 - term3) + ((int32_t)16384)) >> 15);
         
-        // Schritt 3: Zusammenführen
-        int32_t v_x5 = (v_x2 - v_x3 - v_x4 + 16384) >> 15;
-        Serial.print("v_x5: "); Serial.println(v_x5);
+        // Zweite Phase
+        int32_t term4 = (v_x1 * ((int32_t)dig_H6)) >> 10;
+        int32_t term5 = (v_x1 * ((int32_t)dig_H3)) >> 11;
+        int32_t term6 = ((term4 * (term5 + ((int32_t)32768))) >> 10);
+        int32_t term7 = ((term6 + ((int32_t)2097152)) * ((int32_t)dig_H2) + 8192) >> 14;
         
-        // Rest der Berechnung...
-        float h = (float)(v_x5) / 1024.0;
-        Serial.print("Final humidity: "); Serial.println(h);
+        v_x2 = v_x2 * term7;
         
-        return h;
+        // Finale Kompensation
+        v_x1 = v_x2 - (((((v_x2 >> 15) * (v_x2 >> 15)) >> 7) * ((int32_t)dig_H1)) >> 4);
+        v_x1 = (v_x1 < 0) ? 0 : v_x1;
+        v_x1 = (v_x1 > 419430400) ? 419430400 : v_x1;
+        
+        float humidity = (float)(v_x1 >> 12) / 1024.0f;
+        
+        Serial.print("Final v_x1: "); Serial.println(v_x1);
+        Serial.print("Humidity: "); Serial.println(humidity);
+        
+        return humidity;
     }
     return 0;
 }
